@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/oil-core",
+    "crates/oil-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Context-aware binary forensic triage engine for reverse-engineering analysis"

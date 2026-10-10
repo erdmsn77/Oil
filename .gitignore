@@ -1,0 +1,7 @@
+/target/
+/oil.exe
+/dist/
+*.pdb
+FULL_SOURCE_BUNDLE.md
+AGENTS.md
+ARCH_REVIEW.md
