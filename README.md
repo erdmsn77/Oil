@@ -1,118 +1,176 @@
 # OIL // Binary Forensic Triage & Semantic Patch Engine
 
-[![Build and sign release](https://github.com/erdmsn77/oil/actions/workflows/release-sign.yml/badge.svg)](https://github.com/erdmsn77/oil/actions/workflows/release-sign.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-2021%20Edition-orange.svg)](https://www.rust-lang.org/)
+<p align="center">
+  <b>High-performance, context-aware binary forensic triage and semantic patch engine written in Rust.</b><br>
+  <i>Tersine mühendisler, adli bilişim uzmanları ve güvenlik analistleri için bağımsız, yerel ve saliseler mertebesinde PE triaj motoru.</i>
+</p>
 
-**Oil** is a high-performance, context-aware binary forensic triage and semantic patch engine written in Rust. Designed for reverse engineers, malware analysts, and incident responders, Oil rapidly inspects untrusted executables, archives, and directories to separate benign code modifications from hostile capabilities.
+<p align="center">
+  <a href="#english">English</a> •
+  <a href="#türkçe">Türkçe</a>
+</p>
 
-Zero bloat, zero cloud dependencies, sub-millisecond execution.
-
----
-
-## Key Capabilities
-
-### 1. PE Deep Autopsy & Anomaly Detection
-- **Shannon Entropy Profiling**: Evaluates per-section entropy to pinpoint packed, compressed, or encrypted sections.
-- **RWX Memory Permissions**: Detects self-modifying code blocks and runtime unpackers (e.g. `.Baymax`).
-- **Codeless Container Identification**: Flags binaries that lack executable code sections but harbor near-maximal entropy data blocks.
-- **Digital Signature Verification**: Cryptographically validates Authenticode signatures via native Windows Trust Provider (`WinVerifyTrust` FFI) against trusted Root CAs.
-
-### 2. Threat Vector & IOC Extraction
-- **Infostealer Indicators**: Detects exfiltration channels (Discord Webhook URLs, Telegram Bot API tokens) across ASCII and UTF-16LE encodings.
-- **Credential Harvesters**: Identifies hardcoded paths to SQLite credential databases across Chrome, Edge, Firefox, Brave, and crypto wallets.
-- **Process Injection & Stagers**: Flags process memory manipulation imports (`VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread`) and encoded PowerShell dropper fragments.
-
-### 3. DLL Search-Order Hijacking & Sideloading Detection
-- **System DLL Shadowing**: Detects application-directory proxy DLLs shadowing core Windows system libraries (`version.dll`, `dbghelp.dll`, etc.).
-- **Directory Correlation Analysis**: Correlates co-located unsigned proxy hooks with packed/RWX binaries, elevating hostile loader suites to `HIGH RISK`.
-
-### 4. Semantic Binary Diffing & Patch Classification
-- **Disassembly Engine**: Powered by `iced-x86` for full x86/x64 instruction-level analysis.
-- **Smart Patch Classifier**: Differentiates between benign DRM bypasses (e.g. `JNE` to `JMP`, `XOR EAX, EAX; RET`) and hostile code caves or external trampoline jumps.
-
-### 5. Safe In-Memory Archive Inspection
-- **Defensive Unpacking**: Inspects `.zip` archives directly in memory without writing files to disk.
-- **Zip-Bomb & Resource Guard**: Enforces global cumulative decompression budgets and hard file count limits.
-- **Encrypted Entry Triage**: Safely tags password-protected archives as `INCONCLUSIVE` without generating false-clean verdicts.
+<p align="center">
+  <a href="https://github.com/erdmsn77/Oil/actions/workflows/release-sign.yml"><img src="https://github.com/erdmsn77/Oil/actions/workflows/release-sign.yml/badge.svg" alt="Build and sign release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021%20Edition-orange.svg" alt="Rust 2021"></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%20(x86__64)-lightgrey.svg" alt="Platform">
+</p>
 
 ---
 
-## Architecture
+<a name="english"></a>
+## 🇬🇧 English
 
-Oil is designed with a strict library/CLI architectural boundary:
+### Why Oil?
+Traditional antivirus engines fail in binary triage: they either blindly flag every modified executable as a generic Trojan, or fail to inspect multi-layer payload stagers and DLL sideloading hooks. Cloud sandbox analyzers, on the other hand, leak proprietary binaries, have minutes of latency, and are easily bypassed by sleep-based evasion techniques.
 
-```
-oil/
-├── crates/
-│   ├── oil-core/    # Pure forensic analysis engine (zero UI, zero side-effects)
-│   │   ├── src/
-│   │   │   ├── archive.rs   # Zip inspection & memory budgeting
-│   │   │   ├── diff.rs      # Semantic binary diffing & patch classification
-│   │   │   ├── hunt.rs      # DLL proxy hunting & LNK parsing
-│   │   │   ├── io.rs        # Dual hashing (SHA-256 + BLAKE3) & entropy
-│   │   │   ├── ioc.rs       # Aho-Corasick multi-pattern string scanner
-│   │   │   ├── pe.rs        # Goblin PE parser & structural autopsy
-│   │   │   ├── risk.rs      # Decision matrix & combinatorial threat scoring
-│   │   │   └── wintrust.rs  # Native Windows Authenticode verification FFI
-│   │
-│   └── oil-cli/     # Terminal interface & forensic dossier formatter
-│       └── src/
-│           ├── main.rs      # Interactive CLI, directory triage & caching
-│           └── output.rs    # ANSI forensic dossiers & executive summary cards
-```
+**Oil solves this in sub-milliseconds with zero cloud dependencies.** Powered by a strict pure-Rust core and instruction-level disassembly (`iced-x86`), Oil dissects untrusted executables, patches, and directories directly on your local machine to decisively separate benign modifications from hostile capabilities.
+
+### 🌟 Core Differentiators
+
+* ⚡ **Sub-Millisecond Pure Rust Engine**: 0 cloud calls, 0 external runtime dependencies, 0 telemetry. Complete directory triage in fractions of a second.
+* 🧬 **Semantic Binary Diffing**: Uses machine-code disassembly to mathematically differentiate between benign DRM bypasses (e.g. `JNE` to `JMP`, `XOR EAX, EAX; RET`) and hostile code caves or remote trampoline injections.
+* 🛡️ **DLL Hijacking & Sideloading Hunter**: Automatically correlates application directories to catch system DLL shadowing (`version.dll`, `dbghelp.dll`, etc.) and loader suites before execution.
+* 📦 **Safe In-Memory Archive Inspection**: Inspects ZIP containers completely in-memory with strict zip-bomb guards, byte limits, and uninspected encrypted entry escalation.
+* ⚖️ **Epistemic Honesty Guarantee**: Oil strictly rejects dangerous false-clean assumptions. If no indicators are present, it issues `NO INDICATORS FOUND`—never "Clean" or "Safe".
+* 🔐 **Cryptographic Verification**: Verifies Authenticode signatures via native Windows Trust Provider (`WinVerifyTrust` FFI) and distributes release binaries verified with **Sigstore (`cosign`)**.
 
 ---
 
-## Installation & Build
+### Key Capabilities
 
-### Prerequisites
-- [Rust 1.75+](https://www.rust-lang.org/tools/install) (2021 Edition)
-- Windows (x86_64) for native Authenticode verification features
+#### 1. PE Deep Autopsy
+* **Shannon Entropy Profiling**: Per-section entropy maps pinpointing packers, cryptors, and anomalous sections.
+* **RWX Memory Permissions**: Instant detection of self-modifying code, unpacker stubs, and dangerous section flags.
+* **Codeless Container Detection**: Flags high-entropy binaries with non-executable or absent code structures.
+* **Authenticode Validation**: Root-CA cryptographic trust chain checks.
 
-### Build from Source
+#### 2. Threat Vector & IOC Extraction
+* **Infostealer Vectors**: Detects exfiltration endpoints (Discord Webhooks, Telegram Bot API tokens) across ASCII and UTF-16LE.
+* **Credential Harvesters**: Pins hardcoded access paths to Chromium/Gecko databases, Brave, Edge, and crypto wallet stores.
+* **Process Injection & Droppers**: Flags memory injection primitives (`VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread`) and obfuscated PowerShell stagers.
+
+#### 3. Semantic Binary Diffing
+* Pinpoints exact byte-level changes between an original and modified binary.
+* Classifies patches into verified categories: `DRM_BYPASS`, `CODE_INJECTION`, `DIGITAL_SIGNATURE`, or `SUSPICIOUS_UNKNOWN`.
+
+---
+
+### Installation & Build
+
+#### Download Pre-Built Binaries
+Download signed releases directly from [GitHub Releases](https://github.com/erdmsn77/Oil/releases). Every release is cryptographically signed with Sigstore.
+
+#### Build from Source
 ```bash
-git clone https://github.com/erdmsn77/oil.git
-cd oil
+git clone https://github.com/erdmsn77/Oil.git
+cd Oil
 
-# Run all test suites (77 unit and integration tests)
+# Run workspace tests (77 unit and integration tests)
 cargo test --workspace
 
 # Build optimized release binary
 cargo build --release
 ```
-
 The compiled binary will be placed at `target/release/oil.exe`.
 
 ---
 
-## Usage
+### Usage
 
 ```bash
 # Scan a single executable or archive
 oil scan C:\Path\To\Binary.exe
 
-# Scan an entire directory with SHA-256 deduplication and suite correlation
-oil scan C:\Path\To\SoftwareDirectory
+# Scan an entire directory with suite correlation and DLL audit
+oil scan C:\Path\To\ApplicationDirectory
 
-# Semantically compare an original binary against a modified/patched binary
+# Semantically compare an original binary against a modified binary
 oil diff clean_target.exe modified_target.exe
 
-# Audit directory for DLL search-order hijacking / proxy DLLs
+# Audit directory specifically for DLL search-order hijacking candidates
 oil hunt C:\Path\To\ApplicationDirectory
 ```
 
 ---
 
-## Epistemic Honesty Principles
+<a name="türkçe"></a>
+## 🇹🇷 Türkçe
 
-Oil adheres strictly to epistemic safety rules in binary forensics:
-- **Zero False-Clean Claims**: A binary with zero matched IOCs is labeled `NO INDICATORS FOUND`, never "Safe" or "Clean".
-- **Evidence-Backed Verdicts**: Every verdict is accompanied by verifiable Shannon entropy scores, section names, imported API lists, and cryptographic signature statuses.
-- **Priority-Separated Triage**: Signed vendor protections (e.g. proprietary bytecode or encrypted licensing blobs) are clearly distinguished from unsigned hostile loader suites.
+### Neden Oil?
+Geleneksel antivirüs yazılımları tersine mühendislik ve dosya triajında çaresiz kalır: Değiştirilmiş veya yamalanmış meşru bir yazılıma körü körüne "Truva Atı" damgası vurur ya da DLL sideloading ve stager katmanlarını gözden kaçırır. Bulut tabanlı sandbox sistemleri ise hem gizli dosyalarınızı dışarıya sızdırır hem de dakikalarca bekletir.
+
+**Oil, bu problemi sıfır bulut bağımlılığıyla saliseler içinde çözer.** Saf Rust ile sıfırdan geliştirilen mimarisi ve makine kodu ayrıştırıcısı (`iced-x86`) sayesinde, şüpheli binary dosyaları ve dizinleri yerel ortamınızda inceler; zararsız yama modifikasyonları ile düşmanca (hostile) arka kapıları bayt seviyesinde birbirinden ayırır.
+
+### 🌟 Temel Fark Yaratan Özellikler
+
+* ⚡ **Saliseler Mertebesinde Hız (Pure Rust)**: Sıfır bulut çağrısı, sıfır harici bağımlılık, sıfır telemetri. Tüm bir dizin analizi saniyenin onda birinde tamamlanır.
+* 🧬 **Semantik Binary Diffing**: Orijinal ve yamalanmış dosya arasındaki makine kodunu (x86/x64) inceleyerek zararsız DRM bypass yamaları (`JNE` -> `JMP`, `XOR EAX, EAX; RET`) ile zararlı kod mağarası (code cave) veya uzaktan truva enjeksiyonlarını birbirinden matematiksel olarak ayırt eder.
+* 🛡️ **DLL Hijacking ve Sideloading Avcısı**: Uygulama klasörlerine gizlenen sahte sistem DLL'lerini (`version.dll`, `dbghelp.dll` vb.) ve loader paketlerini çalıştırılmadan tespit eder.
+* 📦 **Bellek İçi Güvenli Arşiv Analizi**: ZIP arşivlerini diske yazmadan doğrudan RAM'de inceler. Zip-bomb koruması ve şifreli dosya güvenlik bariyerlerine sahiptir.
+* ⚖️ **Epistemik Dürüstlük İlkesi**: Oil asla sahte bir "Temiz" veya "Güvenli" algısı üretmez. Tehdit bulunamayan dosyalara kesin delil kuralı gereği `NO INDICATORS FOUND` kararı verir.
+* 🔐 **Kriptografik Doğrulama**: Windows Trust Provider (`WinVerifyTrust` FFI) ile Authenticode sertifikalarını denetler; yayınlanan sürümler **Sigstore (`cosign`)** ile mühürlenir.
 
 ---
 
-## License
+### Yetenekler ve Analiz Modülleri
 
-This project is licensed under the [MIT License](LICENSE).
+#### 1. PE Derin Otopsi
+* **Shannon Entropi Analizi**: Sıkıştırılmış, şifrelenmiş veya paketlenmiş bölümleri kesin olarak belirler.
+* **RWX Hafıza İzinleri**: Kendi kendini değiştiren dinamik unpacker bloklarını tespit eder.
+* **Kodsüz Konteyner Tespiti**: Kod bölümü içermeyen ancak yüksek entropili gizli yük barındıran PE dosyalarını yakalar.
+* **Authenticode Denetimi**: Güvenilir Root CA kök sertifika doğrulaması.
+
+#### 2. Tehdit Vektörü ve IOC Taraması
+* **Bilgi Hırsızı (Infostealer) Kanıtları**: Discord Webhook URL'leri ve Telegram Bot API anahtarlarını (ASCII ve UTF-16LE) yakalar.
+* **Tarayıcı ve Cüzdan Veri Tabanı Yolları**: Chrome, Edge, Firefox, Brave ve kripto cüzdan SQLite yollarını tespit eder.
+* **Süreç Enjeksiyonu**: `VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread` gibi kritik API importlarını ve şifreli PowerShell dropper parçacıklarını işaretler.
+
+#### 3. Semantik Binary Kıyaslama (Diff)
+* İki binary arasındaki bayt ve assembly farklarını ortaya çıkarır.
+* Yapılan modifikasyonu sınıflandırır: `DRM_BYPASS`, `CODE_INJECTION`, `DIGITAL_SIGNATURE` veya `SUSPICIOUS_UNKNOWN`.
+
+---
+
+### Kurulum ve Derleme
+
+#### Hazır İmzalı Binary İndirme
+[GitHub Releases](https://github.com/erdmsn77/Oil/releases) sayfasından Sigstore ile dijital olarak imzalanmış `oil.exe` dosyasını doğrudan indirebilirsiniz.
+
+#### Kaynak Koddan Derleme
+```bash
+git clone https://github.com/erdmsn77/Oil.git
+cd Oil
+
+# Tüm test paketlerini çalıştır (77 birim ve entegrasyon testi)
+cargo test --workspace
+
+# Optimize edilmiş sürümü derle
+cargo build --release
+```
+Derlenen binary `target/release/oil.exe` konumunda hazır olacaktır.
+
+---
+
+### Kullanım Örnekleri
+
+```bash
+# Tek bir çalıştırılabilir dosya veya arşivi analiz et
+oil scan C:\Hedef\Dosya.exe
+
+# Tüm bir yazılım dizinini ilişkilendirilmiş risk matrisiyle tara
+oil scan C:\Hedef\UygulamaKlasoru
+
+# Orijinal dosya ile modifiye edilmiş/yamalanmış dosyayı semantik olarak kıyasla
+oil diff temiz_hedef.exe yamali_hedef.exe
+
+# Uygulama klasörünü DLL hijacking / proxy DLL adayları için denetle
+oil hunt C:\Hedef\UygulamaKlasoru
+```
+
+---
+
+## 📜 Lisans / License
+
+Bu proje [MIT Lisansı](LICENSE) altında lisanslanmıştır. / This project is licensed under the [MIT License](LICENSE).
