@@ -24,21 +24,21 @@
 ---
 
 <a name="english"></a>
-## 🇬🇧 English
+## English
 
 ### Why Oil?
 Traditional antivirus engines fail in binary triage: they either blindly flag every modified executable as a generic Trojan, or fail to inspect multi-layer payload stagers and DLL sideloading hooks. Cloud sandbox analyzers, on the other hand, leak proprietary binaries, have minutes of latency, and are easily bypassed by sleep-based evasion techniques.
 
 **Oil solves this in sub-milliseconds with zero cloud dependencies.** Powered by a strict pure-Rust core and instruction-level disassembly (`iced-x86`), Oil dissects untrusted executables, patches, and directories directly on your local machine to decisively separate benign modifications from hostile capabilities.
 
-### 🌟 Core Differentiators
+### Core Differentiators
 
-* ⚡ **Sub-Millisecond Pure Rust Engine**: 0 cloud calls, 0 external runtime dependencies, 0 telemetry. Complete directory triage in fractions of a second.
-* 🧬 **Semantic Binary Diffing**: Uses machine-code disassembly to mathematically differentiate between benign DRM bypasses (e.g. `JNE` to `JMP`, `XOR EAX, EAX; RET`) and hostile code caves or remote trampoline injections.
-* 🛡️ **DLL Hijacking & Sideloading Hunter**: Automatically correlates application directories to catch system DLL shadowing (`version.dll`, `dbghelp.dll`, etc.) and loader suites before execution.
-* 📦 **Safe In-Memory Archive Inspection**: Inspects ZIP containers completely in-memory with strict zip-bomb guards, byte limits, and uninspected encrypted entry escalation.
-* ⚖️ **Epistemic Honesty Guarantee**: Oil strictly rejects dangerous false-clean assumptions. If no indicators are present, it issues `NO INDICATORS FOUND`—never "Clean" or "Safe".
-* 🔐 **Cryptographic Verification**: Verifies Authenticode signatures via native Windows Trust Provider (`WinVerifyTrust` FFI) and distributes release binaries verified with **Sigstore (`cosign`)**.
+* **Sub-Millisecond Pure Rust Engine**: 0 cloud calls, 0 external runtime dependencies, 0 telemetry. Complete directory triage in fractions of a second.
+* **Semantic Binary Diffing**: Uses machine-code disassembly to mathematically differentiate between benign DRM bypasses (e.g. `JNE` to `JMP`, `XOR EAX, EAX; RET`) and hostile code caves or remote trampoline injections.
+* **DLL Hijacking & Sideloading Hunter**: Automatically correlates application directories to catch system DLL shadowing (`version.dll`, `dbghelp.dll`, etc.) and loader suites before execution.
+* **Safe In-Memory Archive Inspection**: Inspects ZIP containers completely in-memory with strict zip-bomb guards, byte limits, and uninspected encrypted entry escalation.
+* **Epistemic Honesty Guarantee**: Oil strictly rejects dangerous false-clean assumptions. If no indicators are present, it issues `NO INDICATORS FOUND`—never "Clean" or "Safe".
+* **Cryptographic Verification**: Verifies Authenticode signatures via native Windows Trust Provider (`WinVerifyTrust` FFI) and distributes release binaries verified with **Sigstore (`cosign`)**.
 
 ---
 
@@ -100,21 +100,21 @@ oil hunt C:\Path\To\ApplicationDirectory
 ---
 
 <a name="türkçe"></a>
-## 🇹🇷 Türkçe
+## Türkçe
 
 ### Neden Oil?
 Geleneksel antivirüs yazılımları tersine mühendislik ve dosya triajında çaresiz kalır: Değiştirilmiş veya yamalanmış meşru bir yazılıma körü körüne "Truva Atı" damgası vurur ya da DLL sideloading ve stager katmanlarını gözden kaçırır. Bulut tabanlı sandbox sistemleri ise hem gizli dosyalarınızı dışarıya sızdırır hem de dakikalarca bekletir.
 
 **Oil, bu problemi sıfır bulut bağımlılığıyla saliseler içinde çözer.** Saf Rust ile sıfırdan geliştirilen mimarisi ve makine kodu ayrıştırıcısı (`iced-x86`) sayesinde, şüpheli binary dosyaları ve dizinleri yerel ortamınızda inceler; zararsız yama modifikasyonları ile düşmanca (hostile) arka kapıları bayt seviyesinde birbirinden ayırır.
 
-### 🌟 Temel Fark Yaratan Özellikler
+### Temel Fark Yaratan Özellikler
 
-* ⚡ **Saliseler Mertebesinde Hız (Pure Rust)**: Sıfır bulut çağrısı, sıfır harici bağımlılık, sıfır telemetri. Tüm bir dizin analizi saniyenin onda birinde tamamlanır.
-* 🧬 **Semantik Binary Diffing**: Orijinal ve yamalanmış dosya arasındaki makine kodunu (x86/x64) inceleyerek zararsız DRM bypass yamaları (`JNE` -> `JMP`, `XOR EAX, EAX; RET`) ile zararlı kod mağarası (code cave) veya uzaktan truva enjeksiyonlarını birbirinden matematiksel olarak ayırt eder.
-* 🛡️ **DLL Hijacking ve Sideloading Avcısı**: Uygulama klasörlerine gizlenen sahte sistem DLL'lerini (`version.dll`, `dbghelp.dll` vb.) ve loader paketlerini çalıştırılmadan tespit eder.
-* 📦 **Bellek İçi Güvenli Arşiv Analizi**: ZIP arşivlerini diske yazmadan doğrudan RAM'de inceler. Zip-bomb koruması ve şifreli dosya güvenlik bariyerlerine sahiptir.
-* ⚖️ **Epistemik Dürüstlük İlkesi**: Oil asla sahte bir "Temiz" veya "Güvenli" algısı üretmez. Tehdit bulunamayan dosyalara kesin delil kuralı gereği `NO INDICATORS FOUND` kararı verir.
-* 🔐 **Kriptografik Doğrulama**: Windows Trust Provider (`WinVerifyTrust` FFI) ile Authenticode sertifikalarını denetler; yayınlanan sürümler **Sigstore (`cosign`)** ile mühürlenir.
+* **Saliseler Mertebesinde Hız (Pure Rust)**: Sıfır bulut çağrısı, sıfır harici bağımlılık, sıfır telemetri. Tüm bir dizin analizi saniyenin onda birinde tamamlanır.
+* **Semantik Binary Diffing**: Orijinal ve yamalanmış dosya arasındaki makine kodunu (x86/x64) inceleyerek zararsız DRM bypass yamaları (`JNE` -> `JMP`, `XOR EAX, EAX; RET`) ile zararlı kod mağarası (code cave) veya uzaktan truva enjeksiyonlarını birbirinden matematiksel olarak ayırt eder.
+* **DLL Hijacking ve Sideloading Avcısı**: Uygulama klasörlerine gizlenen sahte sistem DLL'lerini (`version.dll`, `dbghelp.dll` vb.) ve loader paketlerini çalıştırılmadan tespit eder.
+* **Bellek İçi Güvenli Arşiv Analizi**: ZIP arşivlerini diske yazmadan doğrudan RAM'de inceler. Zip-bomb koruması ve şifreli dosya güvenlik bariyerlerine sahiptir.
+* **Epistemik Dürüstlük İlkesi**: Oil asla sahte bir "Temiz" veya "Güvenli" algısı üretmez. Tehdit bulunamayan dosyalara kesin delil kuralı gereği `NO INDICATORS FOUND` kararı verir.
+* **Kriptografik Doğrulama**: Windows Trust Provider (`WinVerifyTrust` FFI) ile Authenticode sertifikalarını denetler; yayınlanan sürümler **Sigstore (`cosign`)** ile mühürlenir.
 
 ---
 
@@ -175,6 +175,6 @@ oil hunt C:\Hedef\UygulamaKlasoru
 
 ---
 
-## 📜 Lisans / License
+## Lisans / License
 
 Bu proje [MIT Lisansı](LICENSE) altında lisanslanmıştır. / This project is licensed under the [MIT License](LICENSE).
