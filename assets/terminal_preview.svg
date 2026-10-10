@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 540" width="100%" height="100%">
+  <defs>
+    <style>
+      .text-title { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 13px; fill: #8b949e; }
+      .text-code { font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace; font-size: 13.5px; }
+      .c-cyan { fill: #38bdf8; font-weight: bold; }
+      .c-white { fill: #f0f6fc; font-weight: bold; }
+      .c-dim { fill: #8b949e; }
+      .c-green { fill: #4ade80; font-weight: bold; }
+      .c-yellow { fill: #facc15; }
+      .c-magenta { fill: #c084fc; font-weight: bold; }
+      .c-red { fill: #f87171; font-weight: bold; }
+      .c-prompt { fill: #22c55e; font-weight: bold; }
+    </style>
+  </defs>
+
+  <!-- Window Container -->
+  <rect x="0" y="0" width="920" height="540" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1.5" />
+
+  <!-- Window Header -->
+  <path d="M 0 10 C 0 4.5 4.5 0 10 0 L 910 0 C 915.5 0 920 4.5 920 10 L 920 38 L 0 38 Z" fill="#161b22" />
+  <line x1="0" y1="38" x2="920" y2="38" stroke="#30363d" stroke-width="1" />
+
+  <!-- Window Buttons -->
+  <circle cx="22" cy="19" r="6" fill="#ff5f56" />
+  <circle cx="40" cy="19" r="6" fill="#ffbd2e" />
+  <circle cx="58" cy="19" r="6" fill="#27c93f" />
+
+  <!-- Window Title -->
+  <text x="460" y="24" text-anchor="middle" class="text-title">OIL // Binary Forensic Triage Engine — PowerShell</text>
+
+  <!-- Terminal Content -->
+  <g transform="translate(28, 68)" class="text-code">
+    <text y="0" class="c-cyan">═══════════════════════════════════════════════════════════════════════════════════</text>
+    <text y="22" class="c-white">   OIL // Binary Forensic Triage &amp; Semantic Patch Engine (v0.1.0)</text>
+    <text y="44" class="c-cyan">═══════════════════════════════════════════════════════════════════════════════════</text>
+
+    <text y="78" class="c-white">Select an action or paste a target file/folder path directly:</text>
+    <text y="98" class="c-dim">İşlem seçin veya taranacak dosya/klasör yolunu doğrudan yapıştırın:</text>
+
+    <text y="132"><tspan class="c-green">[1]</tspan><tspan fill="#e6edf3"> Scan File or Folder / Dosya veya Klasör Tara</tspan></text>
+    <text y="154"><tspan class="c-green">[2]</tspan><tspan fill="#e6edf3"> Windows Persistence &amp; Proxy DLL Audit / Kalıcılık &amp; DLL Denetimi</tspan></text>
+    <text y="176"><tspan class="c-green">[3]</tspan><tspan fill="#e6edf3"> Semantic Patch Diff / İki Dosyayı Semantik Karşılaştır</tspan></text>
+    <text y="198"><tspan class="c-green">[4]</tspan><tspan fill="#e6edf3"> Benchmark Lab Suite / Dahili Test Laboratuvarı</tspan></text>
+    <text y="220"><tspan class="c-dim">[5] Exit / Çıkış</tspan></text>
+
+    <text y="254" class="c-yellow">Hint: Drag and drop any file or folder directly into this window!</text>
+    <text y="274" class="c-dim">İpucu: Herhangi bir dosyayı doğrudan bu pencereye sürükleyip bırakabilirsiniz.</text>
+
+    <text y="308"><tspan class="c-prompt">Choice or File Path / Seçim veya Dosya Yolu &gt; </tspan><tspan fill="#ffffff">sample_patch.exe</tspan></text>
+
+    <text y="336" class="c-dim">───────────────────────────────────────────────────────────────────────────────────</text>
+    <text y="356"><tspan class="c-cyan">TARGET:</tspan><tspan fill="#e6edf3"> sample_patch.exe [Size: 2,410 KB] | </tspan><tspan class="c-dim">SHA-256: 7f3a...d91c</tspan></text>
+    <text y="378"><tspan fill="#e6edf3">• Disassembly Diff: </tspan><tspan class="c-green">JNE → JMP, XOR EAX, EAX; RET [DRM_BYPASS / LİSANS YAMASI]</tspan></text>
+    <text y="400"><tspan fill="#e6edf3">• Memory Permissions: </tspan><tspan class="c-white">.text (RX) [No RWX Self-Modifying Code Blocks Found]</tspan></text>
+    <text y="422"><tspan fill="#e6edf3">• IOC Multi-Scanner: </tspan><tspan class="c-green">Zero C2 Webhooks / Zero Credential Harvester References</tspan></text>
+
+    <text y="446"><tspan class="c-white">THE VERDICT: </tspan><tspan class="c-green">[NO INDICATORS FOUND]</tspan><tspan fill="#e6edf3"> — Sub-millisecond execution (0.003s)</tspan></text>
+  </g>
+</svg>

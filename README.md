@@ -17,6 +17,10 @@
   <img src="https://img.shields.io/badge/Platform-Windows%20(x86__64)-lightgrey.svg" alt="Platform">
 </p>
 
+<p align="center">
+  <img src="assets/terminal_preview.svg" alt="Oil Interactive Terminal Preview" width="100%">
+</p>
+
 ---
 
 <a name="english"></a>

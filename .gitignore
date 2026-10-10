@@ -5,8 +5,5 @@
 FULL_SOURCE_BUNDLE.md
 AGENTS.md
 ARCH_REVIEW.md
-oil.ico
-oil_logo.jpg
-*.jpg
-*.jpeg
-*.png
+/oil.ico
+/oil_logo.jpg

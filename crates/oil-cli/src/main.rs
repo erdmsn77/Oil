@@ -134,18 +134,18 @@ fn collect_recursive(dir: &Path, current_depth: usize, max_depth: usize, out: &m
 
 fn run_scan(path: &Path) -> bool {
     if !path.exists() {
-        eprintln!("Hata: Hedef dosya veya klasör bulunamadı: {}", path.display());
+        eprintln!("Error: Target not found / Hata: Hedef bulunamadı: {}", path.display());
         return false;
     }
 
     if path.is_dir() {
         let targets = collect_executable_targets(path, 5);
         if targets.is_empty() {
-            println!("Klasörde taranacak çalıştırılabilir dosya (.exe, .dll, .lnk, .zip) bulunamadı: {}", path.display());
+            println!("No executable targets (.exe, .dll, .lnk, .zip) found in / Hedef bulunamadı: {}", path.display());
             return true;
         }
 
-        println!("\nKlasör Taraması Başlatıldı: '{}' ({} adet çalıştırılabilir dosya)", path.display(), targets.len());
+        println!("\nDirectory Scan Initiated / Klasör Taraması Başlatıldı: '{}' ({} files / dosya)", path.display(), targets.len());
 
         let mut reports: Vec<oil_core::models::ScanReport> = Vec::new();
         let mut dedupe_info: Vec<(usize, PathBuf, Option<PathBuf>)> = Vec::new();
@@ -646,14 +646,15 @@ fn print_menu() {
     println!("{}", "   OIL // Binary Forensic Triage & Semantic Patch Engine (v0.1.0)".bold());
     println!("{}", "═══════════════════════════════════════════════════════════════════════".cyan());
     println!();
-    println!("Yapmak istediğiniz işlemi seçin veya taranacak dosya/klasör yolunu doğrudan yapıştırın:\n");
-    println!("  {} Dosya veya Klasör Tara (Scan)", "[1]".green().bold());
-    println!("  {} Windows Kalıcılık & Proxy DLL Denetimi (Hunt)", "[2]".green().bold());
-    println!("  {} İki Dosyayı Semantik Olarak Karşılaştır (Diff)", "[3]".green().bold());
-    println!("  {} Dahili Test & Laboratuvar Benchmark (Lab)", "[4]".green().bold());
-    println!("  {} Çıkış\n", "[5]".dimmed());
-    println!("{}", "İpucu: Taramak istediğiniz herhangi bir dosyayı veya klasörü doğrudan".yellow());
-    println!("{}", "bu pencerenin içine sürükleyip bırakabilir veya yolunu yapıştırabilirsiniz.".yellow());
+    println!("Select an action or paste a target file/folder path directly:");
+    println!("{}", "İşlem seçin veya taranacak dosya/klasör yolunu doğrudan yapıştırın:\n".dimmed());
+    println!("  {} Scan File or Folder / Dosya veya Klasör Tara", "[1]".green().bold());
+    println!("  {} Windows Persistence & Proxy DLL Audit / Kalıcılık & DLL Denetimi", "[2]".green().bold());
+    println!("  {} Semantic Patch Diff / İki Dosyayı Semantik Karşılaştır", "[3]".green().bold());
+    println!("  {} Benchmark Lab Suite / Dahili Test Laboratuvarı", "[4]".green().bold());
+    println!("  {} Exit / Çıkış\n", "[5]".dimmed());
+    println!("{}", "Hint: Drag and drop any file or folder directly into this window!".yellow());
+    println!("{}", "İpucu: Herhangi bir dosyayı doğrudan bu pencereye sürükleyip bırakabilirsiniz.".yellow().dimmed());
     println!();
 }
 
@@ -664,7 +665,7 @@ fn run_interactive_mode() {
     print_menu();
 
     loop {
-        print!("{}", "Seçim veya Dosya Yolu > ".green().bold());
+        print!("{}", "Choice or File Path / Seçim veya Dosya Yolu > ".green().bold());
         let _ = stdout().flush();
 
         let mut line = String::new();
@@ -679,7 +680,7 @@ fn run_interactive_mode() {
         }
 
         if trimmed == "5" || trimmed.eq_ignore_ascii_case("q") || trimmed.eq_ignore_ascii_case("exit") {
-            println!("Oil sonlandırılıyor...");
+            println!("Exiting Oil / Sonlandırılıyor...");
             break;
         }
 
@@ -690,28 +691,28 @@ fn run_interactive_mode() {
 
         match trimmed {
             "1" => {
-                print!("Taranacak dosya veya klasör yolunu sürükleyin/yapıştırın: ");
+                print!("Drag/paste target path / Taranacak dosya/klasör yolunu girin: ");
                 let _ = stdout().flush();
                 let mut p_str = String::new();
                 let _ = stdin().read_line(&mut p_str);
                 if let Some(path) = clean_input_path(&p_str) {
                     run_scan(&path);
                 } else {
-                    eprintln!("Hata: Geçersiz veya boş dosya yolu.");
+                    eprintln!("Error: Invalid or empty path / Hata: Geçersiz veya boş dosya yolu.");
                 }
             }
             "2" => {
-                println!("\nSistem kalıcılık noktaları ve şüpheli persistence anahtarları denetleniyor...\n");
+                println!("\nAuditing Windows persistence points & proxy DLL hooks / Kalıcılık noktaları denetleniyor...\n");
                 run_hunt(None);
             }
             "3" => {
-                print!("\nOrijinal dosya yolu: ");
+                print!("\nOriginal binary path / Orijinal dosya yolu: ");
                 let _ = stdout().flush();
                 let mut o_str = String::new();
                 let _ = stdin().read_line(&mut o_str);
                 let orig = clean_input_path(&o_str);
 
-                print!("Yamalı (cracked/modified) dosya yolu: ");
+                print!("Patched (modified) path / Yamalı dosya yolu: ");
                 let _ = stdout().flush();
                 let mut p_str = String::new();
                 let _ = stdin().read_line(&mut p_str);
@@ -720,7 +721,7 @@ fn run_interactive_mode() {
                 if let (Some(o), Some(p)) = (orig, patched) {
                     run_diff(&o, &p);
                 } else {
-                    eprintln!("Hata: Dosya yolları geçerli değil.");
+                    eprintln!("Error: Invalid file paths / Hata: Dosya yolları geçerli değil.");
                 }
             }
             "4" => {
@@ -731,7 +732,7 @@ fn run_interactive_mode() {
                 if let Some(path) = clean_input_path(user_input) {
                     run_scan(&path);
                 } else {
-                    println!("{}", format!("Geçersiz seçim: '{}'. Menüyü görmek için 'm' yazabilirsiniz.", user_input).red());
+                    println!("{}", format!("Invalid choice / Geçersiz seçim: '{}'. Menu: 'm' / 'help'", user_input).red());
                 }
             }
         }
@@ -752,14 +753,14 @@ fn main() {
         );
 
         if !is_subcommand_or_flag {
-            println!("OIL // Doğrudan Hedef Denetimi (Sürükle & Bırak Modu)\n");
+            println!("OIL // Direct Target Inspection (Drag & Drop Mode / Sürükle & Bırak Modu)\n");
             for arg in &args[1..] {
                 if let Some(candidate) = clean_input_path(arg) {
                     run_scan(&candidate);
                 }
             }
-            println!("\n[Tarama tamamlandı. Başka bir dosya sürükleyebilir veya çıkmak için Enter'a basabilirsiniz]");
-            print!("{}", "Seçim veya Dosya Yolu (Enter: Çıkış) > ".bold().green());
+            println!("\n[Scan complete. Drag another file or press Enter to exit / Tarama tamamlandı. Enter: Çıkış]");
+            print!("{}", "Choice or File Path (Enter: Exit) / Seçim veya Dosya Yolu > ".bold().green());
             let _ = std::io::stdout().flush();
             let mut buf = String::new();
             if std::io::stdin().read_line(&mut buf).is_ok() {
