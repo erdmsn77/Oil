@@ -123,7 +123,7 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
             match trust_status {
                 wintrust::TrustStatus::Valid => {
                     pe_auto.signature_valid = Some(true);
-                    pe_auto.signature_signer = Some("Doğrulanmış Windows Authenticode İmzası (WinVerifyTrust)".to_string());
+                    pe_auto.signature_signer = Some("Verified Windows Authenticode (WinVerifyTrust)".to_string());
                     if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: true,
@@ -147,7 +147,7 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
                 }
                 wintrust::TrustStatus::BadDigest => {
                     pe_auto.signature_valid = Some(false);
-                    pe_auto.signature_signer = Some("Bozulmuş İmza / Hash Uyuşmazlığı".to_string());
+                    pe_auto.signature_signer = Some("Tampered Signature (BadDigest hash mismatch)".to_string());
                     if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,
@@ -160,7 +160,7 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
                 }
                 wintrust::TrustStatus::UntrustedRoot => {
                     pe_auto.signature_valid = Some(false);
-                    pe_auto.signature_signer = Some("Güvenilmeyen Kök Sertifika / Kendinden İmzalı".to_string());
+                    pe_auto.signature_signer = Some("Untrusted Root Certificate / Self-Signed".to_string());
                     if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,
@@ -171,7 +171,7 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
                 }
                 wintrust::TrustStatus::Distrusted => {
                     pe_auto.signature_valid = Some(false);
-                    pe_auto.signature_signer = Some("Açıkça Güvensiz / İptal Edilmiş Sertifika".to_string());
+                    pe_auto.signature_signer = Some("Explicitly Distrusted or Revoked Certificate".to_string());
                     if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,

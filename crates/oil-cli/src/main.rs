@@ -134,18 +134,32 @@ fn collect_recursive(dir: &Path, current_depth: usize, max_depth: usize, out: &m
 
 fn run_scan(path: &Path) -> bool {
     if !path.exists() {
-        eprintln!("Error: Target not found / Hata: Hedef bulunamadı: {}", path.display());
+        eprintln!(
+            "Error: Target not found / {}: {}",
+            "Hedef bulunamadı".dimmed(),
+            path.display()
+        );
         return false;
     }
 
     if path.is_dir() {
         let targets = collect_executable_targets(path, 5);
         if targets.is_empty() {
-            println!("No executable targets (.exe, .dll, .lnk, .zip) found in / Hedef bulunamadı: {}", path.display());
+            println!(
+                "No executable targets (.exe, .dll, .lnk, .zip) found in / {}: {}",
+                "Hedef bulunamadı".dimmed(),
+                path.display()
+            );
             return true;
         }
 
-        println!("\nDirectory Scan Initiated / Klasör Taraması Başlatıldı: '{}' ({} files / dosya)", path.display(), targets.len());
+        println!(
+            "\nDirectory Scan Initiated / {}: '{}' ({} files / {})",
+            "Klasör Taraması Başlatıldı".dimmed(),
+            path.display(),
+            targets.len(),
+            "dosya".dimmed()
+        );
 
         let mut reports: Vec<oil_core::models::ScanReport> = Vec::new();
         let mut dedupe_info: Vec<(usize, PathBuf, Option<PathBuf>)> = Vec::new();
@@ -170,7 +184,12 @@ fn run_scan(path: &Path) -> bool {
                     reports.push(report);
                 }
                 Err(e) => {
-                    eprintln!("Dosya okunurken hata oluştu ({}): {}", p.display(), e);
+                    eprintln!(
+                        "Error reading file {} ({}): {}",
+                        p.display(),
+                        "Dosya okunurken hata oluştu".dimmed(),
+                        e
+                    );
                     let (sha256, blake3) = oil_core::io::dual_hash_file(p).unwrap_or_else(|_| (String::new(), String::new()));
                     let err_report = oil_core::models::ScanReport {
                         identity: oil_core::models::FileIdentity {
@@ -182,7 +201,7 @@ fn run_scan(path: &Path) -> bool {
                         autopsy: None,
                         evidence: Vec::new(),
                         verdict: oil_core::models::Tier::Inconclusive,
-                        verdict_summary: format!("Dosya okunurken hata oluştu: {}", e),
+                        verdict_summary: format!("Failed to read file / {}: {}", "Dosya okuma hatası".dimmed(), e),
                         files_scanned: 0,
                         files_skipped: 1,
                         skip_reasons: vec![e.to_string()],
@@ -199,13 +218,20 @@ fn run_scan(path: &Path) -> bool {
         // Print dossiers with correlated verdicts
         for (idx, report) in reports.iter().enumerate() {
             let (_, ref p, ref dup) = dedupe_info[idx];
-            println!("\n[{}/{}] Taranıyor: {}", idx + 1, targets.len(), p.display());
+            println!(
+                "\n[{}/{}] Scanning / {}: {}",
+                idx + 1,
+                targets.len(),
+                "Taranıyor".dimmed(),
+                p.display()
+            );
             if let Some(ref first_path) = dup {
                 println!(
-                    "  {} SHA-256 Eşleşti ({}...): '{}' ile birebir aynı dosya. (Tekrar analiz atlandı)",
+                    "  {} SHA-256 Match ({}...): Exact duplicate of '{}'. {}",
                     "[+]".green().bold(),
                     &report.identity.sha256[..12],
-                    first_path.display()
+                    first_path.display(),
+                    format!("(Birebir aynı dosya - analiz atlandı)").dimmed()
                 );
             } else {
                 output::print_dossier(report);
@@ -278,29 +304,30 @@ fn run_scan(path: &Path) -> bool {
         if !flagged_reports.is_empty() {
             println!("{}", "───────────────────────────────────────────────────────────────".yellow());
             println!(
-                "  {} ŞÜPHELİ VE RİSKLİ DOSYALARIN ÖNCELİK DAĞILIMI ({} Adet):",
+                "  {} PRIORITY BREAKDOWN: FLAGGED & ANOMALOUS FILES ({} total) {}",
                 "[!]".yellow().bold(),
-                flagged_reports.len()
+                flagged_reports.len(),
+                format!("// Şüpheli ve Riskli Dosyalar").dimmed()
             );
             println!("{}", "───────────────────────────────────────────────────────────────".yellow());
             for (idx, r) in flagged_reports.iter().enumerate() {
                 let v_str = match r.verdict {
-                    oil_core::models::Tier::HighRisk => "[YÜKSEK RİSK]".red().bold(),
-                    oil_core::models::Tier::Suspicious => "[ŞÜPHELİ]".yellow().bold(),
-                    _ => "[DİKKAT]".cyan().bold(),
+                    oil_core::models::Tier::HighRisk => format!("{} {}", "[HIGH RISK]".red().bold(), format!("[YÜKSEK RİSK]").red().dimmed()),
+                    oil_core::models::Tier::Suspicious => format!("{} {}", "[SUSPICIOUS]".yellow().bold(), format!("[ŞÜPHELİ]").yellow().dimmed()),
+                    _ => format!("{} {}", "[NOTICE]".cyan().bold(), format!("[DİKKAT]").cyan().dimmed()),
                 };
 
                 let is_signed = r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true);
                 let priority_badge = if r.verdict_summary.contains("Untrusted Sideloading Loader")
                     || r.verdict_summary.contains("Local Hook")
                 {
-                    "[ŞÜPHELİ // YEREL HOOK MEKANİZMASI]".yellow().bold()
+                    format!("{} {}", "[LOCAL HOOK]".yellow().bold(), format!("[YEREL KANCA]").yellow().dimmed())
                 } else if r.verdict == oil_core::models::Tier::HighRisk {
-                    "[YÜKSEK ÖNCELİK // HOSTILE LOADER]".red().bold()
+                    format!("{} {}", "[HOSTILE LOADER]".red().bold(), format!("[ZARARLI YÜKLEYİCİ]").red().dimmed())
                 } else if is_signed {
-                    "[DÜŞÜK ÖNCELİK // VENDOR KORUMASI]".cyan().bold()
+                    format!("{} {}", "[VENDOR SIGNED]".cyan().bold(), format!("[İMZALI KORUMA]").cyan().dimmed())
                 } else {
-                    "[YÜKSEK ÖNCELİK // İMZASIZ ANOMALİ]".yellow().bold()
+                    format!("{} {}", "[UNSIGNED ANOMALY]".yellow().bold(), format!("[İMZASIZ ANOMALİ]").yellow().dimmed())
                 };
 
                 println!(
@@ -310,38 +337,72 @@ fn run_scan(path: &Path) -> bool {
                     priority_badge,
                     r.identity.path.display().to_string().bold()
                 );
-                let tr_reason = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                let (en_reason, tr_reason) = if r.verdict_summary.contains("Untrusted Sideloading Loader")
                     || r.verdict_summary.contains("Local Hook")
                 {
-                    "Yerel Kanca Mekanizması: İmzasız proxy DLL ve paketlenmiş loader aynı klasörde (Sıfır ağ/soket yeteneği, olası lisans baypası veya mod kancası)."
+                    (
+                        "Local Hook: Unsigned proxy DLL paired with loader (zero network, possible license hook).",
+                        "Yerel Kanca: İmzasız proxy DLL ve loader ikilisi (sıfır ağ, olası lisans kancası)."
+                    )
                 } else if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
-                    "Düşmanca Yan Yükleme Paketi: İmzasız proxy DLL ve paketlenmiş loader aynı klasörde (Ağ/enjeksiyon/zararlı IOC eşleşti)."
+                    (
+                        "Hostile Sideloading Suite: Unsigned proxy DLL paired with loader (network/injection IOC match).",
+                        "Zararlı Yan Yükleme: İmzasız proxy DLL ve zararlı loader (ağ/enjeksiyon IOC eşleşti)."
+                    )
                 } else if r.verdict_summary.contains("search-order hijacking") || r.verdict_summary.contains("proxy hook") {
-                    "Windows sistem DLL gölgeleme / proxy hook ('version.dll' sistem kütüphanesini taklit ediyor)"
+                    (
+                        "Windows system DLL shadowing / proxy hook (e.g. shadows 'version.dll').",
+                        "Windows sistem DLL gölgeleme / proxy hook ('version.dll' kütüphanesini taklit ediyor)."
+                    )
                 } else if r.verdict_summary.contains("Process injection APIs paired with outbound network") {
                     if is_signed {
-                        "Meşru lisans/güncelleme altyapısı: Süreç enjeksiyon API'leri ve dış ağ soketi (Doğrulanmış Dassault imzası mevcut)"
+                        (
+                            "Legitimate vendor telemetry/injection infrastructure (Verified signature present).",
+                            "Meşru lisans/güncelleme altyapısı (Doğrulanmış üretici imzası mevcut)."
+                        )
                     } else {
-                        "Şüpheli yetenek kombinasyonu: Süreç enjeksiyon API'leri (CreateRemoteThread) ve dış ağ bağlantısı"
+                        (
+                            "Hostile capability combo: Process injection APIs paired with outbound network.",
+                            "Şüpheli yetenek kombinasyonu: Süreç enjeksiyon API'leri ve dış ağ bağlantısı."
+                        )
                     }
                 } else if r.verdict_summary.contains("RWX memory permissions") {
-                    "RWX (Okuma-Yazma-Çalıştırma) bellek izinleri (.Baymax runtime unpacker)"
+                    (
+                        "RWX (Read-Write-Execute) memory permissions (runtime unpacker pattern).",
+                        "RWX (Okuma-Yazma-Çalıştırma) bellek izinleri (unpacker yapısı)."
+                    )
                 } else if r.verdict_summary.contains("Codeless data carrier") {
                     if is_signed {
-                        "JS0 bytecode taşıyıcı: Kodsuz bölüm, şifreli veri konteyneri (Doğrulanmış Dassault imzası mevcut)"
+                        (
+                            "Codeless encrypted container (Verified vendor signature present).",
+                            "Kodsuz şifreli veri konteyneri (Doğrulanmış üretici imzası mevcut)."
+                        )
                     } else {
-                        "Kodsuz şifreli veri taşıyıcı (executable kod bölümü yok, saf şifreli payload konteyneri)"
+                        (
+                            "Codeless encrypted payload carrier (no executable code section).",
+                            "Kodsuz şifreli veri taşıyıcı (kod bölümü yok, saf payload konteyneri)."
+                        )
                     }
                 } else if r.verdict_summary.contains("High-entropy section detected within valid binary") || r.verdict_summary.contains("Near-maximal section entropy") {
                     if is_signed {
-                        "Bölüm içinde yüksek entropi: Gömülü lisans blobu veya sıkıştırılmış kaynak (Doğrulanmış Dassault imzası mevcut)"
+                        (
+                            "High-entropy section: Embedded license blob or compressed assets (Signed).",
+                            "Bölüm içinde yüksek entropi: Gömülü lisans veya sıkıştırılmış kaynak (İmzalı)."
+                        )
                     } else {
-                        "Bölüm içinde yüksek entropi (gömülü şifreli veri veya paketleyici)"
+                        (
+                            "High-entropy section (embedded encrypted payload or packer).",
+                            "Bölüm içinde yüksek entropi (gömülü şifreli veri veya paketleyici)."
+                        )
                     }
                 } else {
-                    &r.verdict_summary
+                    (r.verdict_summary.as_str(), "")
                 };
-                println!("      -> Gerekçe: {}", tr_reason);
+
+                println!("      -> {}", en_reason);
+                if !tr_reason.is_empty() {
+                    println!("         {}", format!("({})", tr_reason).dimmed());
+                }
             }
             println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
             println!();
@@ -370,7 +431,12 @@ fn run_scan(path: &Path) -> bool {
                 true
             }
             Err(e) => {
-                eprintln!("Hata: Dosya taranırken hata oluştu ({}): {}", path.display(), e);
+                eprintln!(
+                    "Error scanning file {} ({}): {}",
+                    path.display(),
+                    "Dosya taranırken hata oluştu".dimmed(),
+                    e
+                );
                 false
             }
         }
@@ -410,28 +476,42 @@ fn handle_post_scan_navigation(
 
     loop {
         println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-        println!("{}", "  [HIZLI ADLİ NAVİGASYON & ŞÜPHELİ İNCELEME ÇUBUĞU]".cyan().bold());
+        println!(
+            "  {} {}",
+            "[FORENSIC NAVIGATION & AUDIT BAR]".cyan().bold(),
+            format!("// [HIZLI ADLİ NAVİGASYON]").cyan().dimmed()
+        );
         println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
         println!(
-            "  {} Yalnızca Şüpheli / Riskli Dosyaları Listele ve İncele ({} dosya)",
+            "  {} Inspect Flagged / Suspicious Files {} ({} files / {})",
             "[1]".green().bold(),
-            flagged_reports.len()
+            format!("/ Şüpheli Dosyaları İncele").dimmed(),
+            flagged_reports.len(),
+            "dosya".dimmed()
         );
         println!(
-            "  {} Taranan Tüm Dosyaların ({}) Kompakt Listesini Göster",
+            "  {} List All Scanned Files {} ({} files / {})",
             "[2]".green().bold(),
-            total
+            format!("/ Taranan Tüm Dosyaları Listele").dimmed(),
+            total,
+            "dosya".dimmed()
         );
         println!(
-            "  {} En Başa Git / Konsolu Temizle ve Özet Raporu Göster",
-            "[3]".green().bold()
+            "  {} Clear Console & Show Executive Summary {}",
+            "[3]".green().bold(),
+            format!("/ Başa Dön ve Özet Raporu Göster").dimmed()
         );
         println!(
-            "  {} Ana Menüye Dön / Devam Et",
-            "[4]".dimmed()
+            "  {} Return to Main Menu / Continue {}",
+            "[4]".dimmed(),
+            format!("/ Ana Menüye Dön").dimmed()
         );
         println!();
-        print!("{}", "Navigasyon Seçimi > ".green().bold());
+        print!(
+            "{} / {}: ",
+            "Navigation Choice".green().bold(),
+            "Navigasyon Seçimi >".green().dimmed()
+        );
         let _ = std::io::stdout().flush();
 
         let mut choice = String::new();
@@ -450,33 +530,37 @@ fn handle_post_scan_navigation(
         match trimmed {
             "1" => {
                 if flagged_reports.is_empty() {
-                    println!("\n[OK] Klasörde herhangi bir şüpheli veya riskli dosya bulunmuyor.");
+                    println!(
+                        "\n[OK] Zero flagged or suspicious files found in directory. {}",
+                        format!("(Klasörde herhangi bir şüpheli veya riskli dosya bulunmuyor.)").dimmed()
+                    );
                 } else {
                     println!();
                     println!("{}", "───────────────────────────────────────────────────────────────".yellow());
                     println!(
-                        "  {} ŞÜPHELİ / ANOMALİ TESPİT EDİLEN DOSYALAR ({} Adet):",
+                        "  {} FLAGGED / SUSPICIOUS FILES ({} total) {}",
                         "[!]".yellow().bold(),
-                        flagged_reports.len()
+                        flagged_reports.len(),
+                        format!("// Şüpheli Dosyalar").dimmed()
                     );
                     println!("{}", "───────────────────────────────────────────────────────────────".yellow());
                     for (idx, r) in flagged_reports.iter().enumerate() {
                         let v_str = match r.verdict {
-                            oil_core::models::Tier::HighRisk => "[YÜKSEK RİSK]".red().bold(),
-                            oil_core::models::Tier::Suspicious => "[ŞÜPHELİ]".yellow().bold(),
-                            _ => "[DİKKAT]".cyan().bold(),
+                            oil_core::models::Tier::HighRisk => format!("{} {}", "[HIGH RISK]".red().bold(), format!("[YÜKSEK RİSK]").red().dimmed()),
+                            oil_core::models::Tier::Suspicious => format!("{} {}", "[SUSPICIOUS]".yellow().bold(), format!("[ŞÜPHELİ]").yellow().dimmed()),
+                            _ => format!("{} {}", "[NOTICE]".cyan().bold(), format!("[DİKKAT]").cyan().dimmed()),
                         };
 
                         let priority_badge = if r.verdict_summary.contains("Untrusted Sideloading Loader")
                             || r.verdict_summary.contains("Local Hook")
                         {
-                            "[ŞÜPHELİ // YEREL HOOK MEKANİZMASI]".yellow().bold()
+                            format!("{} {}", "[LOCAL HOOK]".yellow().bold(), format!("[YEREL KANCA]").yellow().dimmed())
                         } else if r.verdict == oil_core::models::Tier::HighRisk {
-                            "[YÜKSEK ÖNCELİK // HOSTILE LOADER]".red().bold()
+                            format!("{} {}", "[HOSTILE LOADER]".red().bold(), format!("[ZARARLI YÜKLEYİCİ]").red().dimmed())
                         } else if r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true) {
-                            "[DÜŞÜK ÖNCELİK // VENDOR KORUMASI]".cyan().bold()
+                            format!("{} {}", "[VENDOR SIGNED]".cyan().bold(), format!("[İMZALI KORUMA]").cyan().dimmed())
                         } else {
-                            "[YÜKSEK ÖNCELİK // İMZASIZ ANOMALİ]".yellow().bold()
+                            format!("{} {}", "[UNSIGNED ANOMALY]".yellow().bold(), format!("[İMZASIZ ANOMALİ]").yellow().dimmed())
                         };
 
                         println!(
@@ -486,34 +570,60 @@ fn handle_post_scan_navigation(
                             priority_badge,
                             r.identity.path.display().to_string().bold()
                         );
-                        let tr_reason = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                        let (en_reason, tr_reason) = if r.verdict_summary.contains("Untrusted Sideloading Loader")
                             || r.verdict_summary.contains("Local Hook")
                         {
-                            "Yerel Kanca Mekanizması: İmzasız proxy DLL ve paketleyici ikilisi (Sıfır ağ/soket yeteneği, olası lisans baypası veya mod kancası)."
+                            (
+                                "Local Hook: Unsigned proxy DLL paired with loader (zero network, possible license hook).",
+                                "Yerel Kanca: İmzasız proxy DLL ve loader ikilisi (sıfır ağ, olası lisans baypası)."
+                            )
                         } else if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
-                            "Düşmanca Yan Yükleme Paketi: İmzasız proxy DLL ve paketlenmiş loader aynı klasörde tespit edildi (Ağ/enjeksiyon/zararlı IOC eşleşti)."
+                            (
+                                "Hostile Sideloading Suite: Unsigned proxy DLL paired with hostile loader (network/injection IOCs).",
+                                "Zararlı Yan Yükleme: İmzasız proxy DLL ve zararlı loader ikilisi (ağ/enjeksiyon IOC)."
+                            )
                         } else if r.verdict_summary.contains("search-order hijacking") || r.verdict_summary.contains("proxy hook") {
-                            "Sistem DLL gölgeleme / proxy hook ('version.dll' sistem kütüphanesini taklit ediyor)"
+                            (
+                                "Windows system DLL shadowing / proxy hook (e.g. shadows 'version.dll').",
+                                "Sistem DLL gölgeleme / proxy hook ('version.dll' sistem kütüphanesini taklit ediyor)."
+                            )
                         } else if r.verdict_summary.contains("Process injection APIs paired with outbound network") {
-                            "Şüpheli yetenek kombinasyonu: Süreç enjeksiyon API'leri (CreateRemoteThread) ve dış ağ bağlantısı (wininet/ws2_32)"
+                            (
+                                "Hostile capability combo: Process injection APIs paired with outbound network.",
+                                "Şüpheli yetenek kombinasyonu: Süreç enjeksiyon API'leri ve dış ağ bağlantısı."
+                            )
                         } else if r.verdict_summary.contains("RWX memory permissions") {
-                            "RWX (Okuma-Yazma-Çalıştırma) bellek izinleri (.Baymax runtime unpacker)"
+                            (
+                                "RWX (Read-Write-Execute) memory permissions (runtime unpacker pattern).",
+                                "RWX (Okuma-Yazma-Çalıştırma) bellek izinleri (unpacker yapısı)."
+                            )
                         } else if r.verdict_summary.contains("Codeless data carrier") {
-                            "Kodsuz şifreli veri taşıyıcı (executable kod bölümü yok, saf şifreli payload konteyneri)"
+                            (
+                                "Codeless encrypted payload carrier (no executable code section).",
+                                "Kodsuz şifreli veri taşıyıcı (kod bölümü yok, saf payload konteyneri)."
+                            )
                         } else if r.verdict_summary.contains("High-entropy section detected within valid binary") || r.verdict_summary.contains("Near-maximal section entropy") {
-                            "Bölüm içinde yüksek entropi (gömülü sıkıştırılmış veri veya lisans blobu)"
+                            (
+                                "High-entropy section (embedded encrypted payload or packer).",
+                                "Bölüm içinde yüksek entropi (gömülü sıkıştırılmış veri veya lisans)."
+                            )
                         } else {
-                            &r.verdict_summary
+                            (r.verdict_summary.as_str(), "")
                         };
-                        println!("      -> Gerekçe: {}", tr_reason);
+
+                        println!("      -> {}", en_reason);
+                        if !tr_reason.is_empty() {
+                            println!("         {}", format!("({})", tr_reason).dimmed());
+                        }
                     }
                     println!("{}", "───────────────────────────────────────────────────────────────".yellow());
                     println!(
-                        "Detaylı otopsisini görmek istediğiniz dosya numarasını girin [1-{}]:",
-                        flagged_reports.len()
+                        "Enter file number for deep autopsy [1-{}]: {}",
+                        flagged_reports.len(),
+                        format!("(Detaylı otopsi için dosya no)").dimmed()
                     );
-                    println!("(Geri dönmek için Enter)");
-                    print!("Dosya No > ");
+                    println!("{}", "(Press Enter to go back / Geri dönmek için Enter)".dimmed());
+                    print!("{} / {}: ", "File #".bold(), "Dosya No >".dimmed());
                     let _ = std::io::stdout().flush();
                     let mut num_str = String::new();
                     let _ = std::io::stdin().read_line(&mut num_str);
@@ -522,8 +632,9 @@ fn handle_post_scan_navigation(
                             println!();
                             println!("{}", "───────────────────────────────────────────────────────────────".cyan());
                             println!(
-                                "  DOSYA DETAYI [#{}] : {}",
+                                "  FILE AUTOPSY DOSSIER [#{}] / {}: {}",
                                 num,
+                                format!("DOSYA DETAYI").dimmed(),
                                 flagged_reports[num - 1].identity.path.display()
                             );
                             println!("{}", "───────────────────────────────────────────────────────────────".cyan());
@@ -535,14 +646,18 @@ fn handle_post_scan_navigation(
             "2" => {
                 println!();
                 println!("{}", "───────────────────────────────────────────────────────────────".cyan());
-                println!("  TARANAN TÜM DOSYALARIN ÖZET DURUM LİSTESİ ({} Dosya):", total);
+                println!(
+                    "  ALL SCANNED FILES COMPACT STATUS ({} files) {}",
+                    total,
+                    format!("// Taranan Tüm Dosyalar").dimmed()
+                );
                 println!("{}", "───────────────────────────────────────────────────────────────".cyan());
                 for (idx, r) in reports.iter().enumerate() {
                     let badge = match r.verdict {
-                        oil_core::models::Tier::HighRisk => "[!] [YÜKSEK RİSK]".red(),
-                        oil_core::models::Tier::Suspicious => "[!] [ŞÜPHELİ]   ".yellow(),
-                        oil_core::models::Tier::NoIndicatorsFound => "[+] [BELİRTİSİZ] ".green(),
-                        oil_core::models::Tier::Inconclusive => "[-] [KARARSIZ]  ".magenta(),
+                        oil_core::models::Tier::HighRisk => format!("{} {}", "[!] [HIGH RISK]".red().bold(), format!("[YÜKSEK RİSK]").red().dimmed()),
+                        oil_core::models::Tier::Suspicious => format!("{} {}", "[!] [SUSPICIOUS]".yellow().bold(), format!("[ŞÜPHELİ]").yellow().dimmed()),
+                        oil_core::models::Tier::NoIndicatorsFound => format!("{} {}", "[+] [NO INDICATORS]".green().bold(), format!("[BELİRTİSİZ]").green().dimmed()),
+                        oil_core::models::Tier::Inconclusive => format!("{} {}", "[-] [INCONCLUSIVE]".magenta().bold(), format!("[KARARSIZ]").magenta().dimmed()),
                     };
                     let fname = r
                         .identity
@@ -570,7 +685,10 @@ fn handle_post_scan_navigation(
                 );
             }
             _ => {
-                println!("Geçersiz seçim. [1-4] arasında bir numara giriniz.");
+                println!(
+                    "Invalid choice. Enter [1-4] {}.",
+                    format!("(Geçersiz seçim. [1-4] arasında bir numara giriniz.)").dimmed()
+                );
             }
         }
         println!();
@@ -579,11 +697,19 @@ fn handle_post_scan_navigation(
 
 fn run_diff(original: &Path, patched: &Path) -> bool {
     if !original.exists() {
-        eprintln!("Hata: Orijinal ikili dosya bulunamadı: {}", original.display());
+        eprintln!(
+            "Error: Original binary not found / {}: {}",
+            "Orijinal dosya bulunamadı".dimmed(),
+            original.display()
+        );
         return false;
     }
     if !patched.exists() {
-        eprintln!("Hata: Yamalı ikili dosya bulunamadı: {}", patched.display());
+        eprintln!(
+            "Error: Patched binary not found / {}: {}",
+            "Yamalı dosya bulunamadı".dimmed(),
+            patched.display()
+        );
         return false;
     }
 
@@ -593,7 +719,11 @@ fn run_diff(original: &Path, patched: &Path) -> bool {
             true
         }
         Err(e) => {
-            eprintln!("Hata: İkili yama analizi başarısız: {}", e);
+            eprintln!(
+                "Error: Binary diff analysis failed / {}: {}",
+                "İkili yama analizi başarısız".dimmed(),
+                e
+            );
             false
         }
     }
@@ -629,11 +759,11 @@ fn print_menu() {
     println!();
     println!("Select an action or paste a target file/folder path directly:");
     println!("{}", "İşlem seçin veya taranacak dosya/klasör yolunu doğrudan yapıştırın:\n".dimmed());
-    println!("  {} Scan File or Folder / Dosya veya Klasör Tara", "[1]".green().bold());
-    println!("  {} Windows Persistence & Proxy DLL Audit / Kalıcılık & DLL Denetimi", "[2]".green().bold());
-    println!("  {} Semantic Patch Diff / İki Dosyayı Semantik Karşılaştır", "[3]".green().bold());
-    println!("  {} Benchmark Lab Suite / Dahili Test Laboratuvarı", "[4]".green().bold());
-    println!("  {} Exit / Çıkış\n", "[5]".dimmed());
+    println!("  {} Scan File or Folder {}", "[1]".green().bold(), format!("/ Dosya veya Klasör Tara").dimmed());
+    println!("  {} Windows Persistence & Proxy DLL Audit {}", "[2]".green().bold(), format!("/ Kalıcılık & DLL Denetimi").dimmed());
+    println!("  {} Semantic Patch Diff {}", "[3]".green().bold(), format!("/ İki Dosyayı Semantik Karşılaştır").dimmed());
+    println!("  {} Benchmark Lab Suite {}", "[4]".green().bold(), format!("/ Dahili Test Laboratuvarı").dimmed());
+    println!("  {} Exit {}\n", "[5]".dimmed(), format!("/ Çıkış").dimmed());
     println!("{}", "Hint: Drag and drop any file or folder directly into this window!".yellow());
     println!("{}", "İpucu: Herhangi bir dosyayı doğrudan bu pencereye sürükleyip bırakabilirsiniz.".yellow().dimmed());
     println!();
@@ -646,7 +776,11 @@ fn run_interactive_mode() {
     print_menu();
 
     loop {
-        print!("{}", "Choice or File Path / Seçim veya Dosya Yolu > ".green().bold());
+        print!(
+            "{} / {}: ",
+            "Choice or File Path".green().bold(),
+            "Seçim veya Dosya Yolu >".green().dimmed()
+        );
         let _ = stdout().flush();
 
         let mut line = String::new();
@@ -661,7 +795,7 @@ fn run_interactive_mode() {
         }
 
         if trimmed == "5" || trimmed.eq_ignore_ascii_case("q") || trimmed.eq_ignore_ascii_case("exit") {
-            println!("Exiting Oil / Sonlandırılıyor...");
+            println!("Exiting Oil... {}", "(Sonlandırılıyor)".dimmed());
             break;
         }
 
@@ -672,28 +806,43 @@ fn run_interactive_mode() {
 
         match trimmed {
             "1" => {
-                print!("Drag/paste target path / Taranacak dosya/klasör yolunu girin: ");
+                print!(
+                    "Drag/paste target path / {}: ",
+                    "Taranacak dosya/klasör yolunu girin".dimmed()
+                );
                 let _ = stdout().flush();
                 let mut p_str = String::new();
                 let _ = stdin().read_line(&mut p_str);
                 if let Some(path) = clean_input_path(&p_str) {
                     run_scan(&path);
                 } else {
-                    eprintln!("Error: Invalid or empty path / Hata: Geçersiz veya boş dosya yolu.");
+                    eprintln!(
+                        "Error: Invalid or empty path / {}",
+                        "Hata: Geçersiz veya boş dosya yolu.".dimmed()
+                    );
                 }
             }
             "2" => {
-                println!("\nAuditing Windows persistence points & proxy DLL hooks / Kalıcılık noktaları denetleniyor...\n");
+                println!(
+                    "\nAuditing Windows persistence points & proxy DLL hooks... {}\n",
+                    "(Kalıcılık noktaları ve kancalar denetleniyor)".dimmed()
+                );
                 run_hunt(None);
             }
             "3" => {
-                print!("\nOriginal binary path / Orijinal dosya yolu: ");
+                print!(
+                    "\nOriginal binary path / {}: ",
+                    "Orijinal dosya yolu".dimmed()
+                );
                 let _ = stdout().flush();
                 let mut o_str = String::new();
                 let _ = stdin().read_line(&mut o_str);
                 let orig = clean_input_path(&o_str);
 
-                print!("Patched (modified) path / Yamalı dosya yolu: ");
+                print!(
+                    "Patched binary path / {}: ",
+                    "Yamalı dosya yolu".dimmed()
+                );
                 let _ = stdout().flush();
                 let mut p_str = String::new();
                 let _ = stdin().read_line(&mut p_str);
@@ -702,7 +851,10 @@ fn run_interactive_mode() {
                 if let (Some(o), Some(p)) = (orig, patched) {
                     run_diff(&o, &p);
                 } else {
-                    eprintln!("Error: Invalid file paths / Hata: Dosya yolları geçerli değil.");
+                    eprintln!(
+                        "Error: Invalid file paths / {}",
+                        "Hata: Dosya yolları geçerli değil.".dimmed()
+                    );
                 }
             }
             "4" => {
@@ -713,7 +865,11 @@ fn run_interactive_mode() {
                 if let Some(path) = clean_input_path(user_input) {
                     run_scan(&path);
                 } else {
-                    println!("{}", format!("Invalid choice / Geçersiz seçim: '{}'. Menu: 'm' / 'help'", user_input).red());
+                    println!(
+                        "{} {}",
+                        format!("Invalid choice / Geçersiz seçim: '{}'.", user_input).red(),
+                        "Menu: 'm' / 'help'".dimmed()
+                    );
                 }
             }
         }
@@ -734,14 +890,24 @@ fn main() {
         );
 
         if !is_subcommand_or_flag {
-            println!("OIL // Direct Target Inspection (Drag & Drop Mode / Sürükle & Bırak Modu)\n");
+            println!(
+                "OIL // Direct Target Inspection {}\n",
+                "(Drag & Drop Mode / Sürükle & Bırak Modu)".dimmed()
+            );
             for arg in &args[1..] {
                 if let Some(candidate) = clean_input_path(arg) {
                     run_scan(&candidate);
                 }
             }
-            println!("\n[Scan complete. Drag another file or press Enter to exit / Tarama tamamlandı. Enter: Çıkış]");
-            print!("{}", "Choice or File Path (Enter: Exit) / Seçim veya Dosya Yolu > ".bold().green());
+            println!(
+                "\n[Scan complete. Drag another file or press Enter to exit / {}]",
+                "Tarama tamamlandı. Enter: Çıkış".dimmed()
+            );
+            print!(
+                "{} / {}: ",
+                "Choice or File Path (Enter: Exit)".green().bold(),
+                "Seçim veya Dosya Yolu >".green().dimmed()
+            );
             let _ = std::io::stdout().flush();
             let mut buf = String::new();
             if std::io::stdin().read_line(&mut buf).is_ok() {

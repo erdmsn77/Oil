@@ -177,26 +177,53 @@ pub fn print_dossier(report: &ScanReport) {
 
         if let Some(true) = autopsy.signature_valid {
             if let Some(ref signer) = autopsy.signature_signer {
-                println!("  • Digital Signature: Valid Authenticode signature ({}).", signer.green());
+                println!(
+                    "  • Digital Signature: Valid Authenticode signature ({}) {}",
+                    signer.green(),
+                    format!("(Doğrulanmış Windows Authenticode İmzası)").green().dimmed()
+                );
             } else {
-                println!("  • Digital Signature: Valid Authenticode security directory present.");
+                println!(
+                    "  • Digital Signature: Valid Authenticode security directory present. {}",
+                    format!("(Doğrulanmış Authenticode Güvenlik Dizini)").green().dimmed()
+                );
             }
         } else if let Some(false) = autopsy.signature_valid {
             if let Some(ref detail) = autopsy.signature_signer {
-                println!("  • Digital Signature: Invalid or unverified Authenticode signature ({}).", detail.yellow());
+                println!(
+                    "  • Digital Signature: Invalid or unverified Authenticode signature ({}) {}",
+                    detail.yellow(),
+                    format!("(Doğrulanmamış veya Geçersiz İmza)").yellow().dimmed()
+                );
             } else {
-                println!("  • Digital Signature: Missing or invalid Authenticode signature.");
+                println!(
+                    "  • Digital Signature: Missing or invalid Authenticode signature. {}",
+                    format!("(Eksik veya Geçersiz Authenticode İmzası)").yellow().dimmed()
+                );
             }
             println!(
                 "    {}",
                 "Context: Code patches invalidate original vendor signatures. This alone does not indicate malice."
                     .dimmed()
             );
+            println!(
+                "    {}",
+                "(Not: Kod yamaları orijinal üretici imzasını bozar. Bu durum tek başına zararlı anlamına gelmez.)"
+                    .dimmed()
+            );
         } else {
-            println!("  • Digital Signature: Missing signature directory (unsigned / modified).");
+            println!(
+                "  • Digital Signature: Missing signature directory (unsigned / modified). {}",
+                format!("(İmzasız veya Değiştirilmiş İkili Dosya)").dimmed()
+            );
             println!(
                 "    {}",
                 "Context: Code patches invalidate original vendor signatures. This alone does not indicate malice."
+                    .dimmed()
+            );
+            println!(
+                "    {}",
+                "(Not: Kod yamaları orijinal üretici imzasını bozar. Bu durum tek başına zararlı anlamına gelmez.)"
                     .dimmed()
             );
         }
@@ -561,15 +588,24 @@ pub fn print_single_summary_box(report: &ScanReport) {
 
     println!();
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("{}", "   FORENSIC EXECUTIVE SUMMARY // ADLİ TARAMA SONUÇ ÖZETİ".cyan().bold());
+    println!(
+        "   {} {}",
+        "FORENSIC EXECUTIVE SUMMARY".cyan().bold(),
+        format!("// ADLİ TARAMA SONUÇ ÖZETİ").cyan().dimmed()
+    );
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("  Target / Hedef Dosya   : {}", file_name.bold());
+    println!("  Target / {}: {}", "Hedef Dosya".dimmed(), file_name.bold());
 
     match report.verdict {
         Tier::HighRisk => {
-            println!("  Verdict / Nihai Durum  : {}", "[ALERT] [HIGH RISK // TEHLİKELİ DOSYA]".red().bold());
+            println!(
+                "  Verdict / {}: {} {}",
+                "Nihai Durum".dimmed(),
+                "[ALERT] [HIGH RISK]".red().bold(),
+                format!("[TEHLİKELİ DOSYA]").red().dimmed()
+            );
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / DEĞERLENDİRME:");
+            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
             let has_stealer = report.evidence.iter().any(|e| {
                 matches!(
                     &e.kind,
@@ -581,49 +617,64 @@ pub fn print_single_summary_box(report: &ScanReport) {
             });
             if has_stealer {
                 println!("  • CRITICAL: Infostealer, malicious webhook, or data siphon observed!");
-                println!("    (DİKKAT! Bilgi çalıcı, zararlı webhook veya veri sızdırma mekanizması tespit edildi!)");
+                println!("{}", "    (DİKKAT! Bilgi çalıcı, zararlı webhook veya veri sızdırma mekanizması tespit edildi!)".dimmed());
                 println!("  • ACTION: DO NOT EXECUTE. Delete or quarantine immediately.");
-                println!("    (TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz.)");
+                println!("{}", "    (TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz.)".dimmed());
             } else {
                 println!("  • CRITICAL: High-risk hostile payload / code injection structure detected!");
-                println!("    (DİKKAT! Düşmanca süreç enjeksiyonu veya zararlı yükleyici yapısı tespit edildi!)");
+                println!("{}", "    (DİKKAT! Düşmanca süreç enjeksiyonu veya zararlı yükleyici yapısı tespit edildi!)".dimmed());
                 println!("  • ACTION: Execution not recommended unless strictly trusted.");
-                println!("    (TAVSİYE: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.)");
+                println!("{}", "    (TAVSİYE: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.)".dimmed());
             }
         }
         Tier::Suspicious => {
-            println!("  Verdict / Nihai Durum  : {}", "[NOTICE] [SUSPICIOUS // DİKKAT GEREKTİRİR]".yellow().bold());
+            println!(
+                "  Verdict / {}: {} {}",
+                "Nihai Durum".dimmed(),
+                "[NOTICE] [SUSPICIOUS]".yellow().bold(),
+                format!("[DİKKAT GEREKTİRİR]").yellow().dimmed()
+            );
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / DEĞERLENDİRME:");
+            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
             if report.verdict_summary.contains("Untrusted Sideloading Loader")
                 || report.verdict_summary.contains("Local Hook")
             {
                 println!("  • Untrusted local hook / license emulator (Zero network capabilities).");
-                println!("    (Yerel lisans kancası veya mod mekanizması - Sıfır dış ağ soketi/API'si).");
+                println!("{}", "    (Yerel lisans kancası veya mod mekanizması - Sıfır dış ağ soketi/API'si).".dimmed());
                 println!("  • ACTION: Safe for offline use; evaluate provenance before executing.");
-                println!("    (TAVSİYE: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz.)");
+                println!("{}", "    (TAVSİYE: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz.)".dimmed());
             } else {
                 println!("  • Structural anomaly, suspicious network import, or high entropy section.");
-                println!("    (Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.)");
+                println!("{}", "    (Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.)".dimmed());
                 println!("  • ACTION: Exercise caution if origin is untrusted or unknown.");
-                println!("    (TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.)");
+                println!("{}", "    (TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.)".dimmed());
             }
         }
         Tier::NoIndicatorsFound => {
-            println!("  Verdict / Nihai Durum  : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
+            println!(
+                "  Verdict / {}: {} {}",
+                "Nihai Durum".dimmed(),
+                "[NO THREAT INDICATORS OBSERVED]".green().bold(),
+                format!("[TEHDİT BELİRTİSİ GÖRÜLMEDİ]").green().dimmed()
+            );
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / DEĞERLENDİRME:");
+            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
             println!("  • No known trojans, infostealers, backdoors, or ransomware traces found.");
-            println!("    (Dosyada bilinen hiçbir trojan, veri çalıcı veya zararlı yazılım izine rastlanmadı.)");
+            println!("{}", "    (Dosyada bilinen hiçbir trojan, veri çalıcı veya zararlı yazılım izine rastlanmadı.)".dimmed());
         }
         Tier::Inconclusive => {
-            println!("  Verdict / Nihai Durum  : {}", "[NOTICE] [INCONCLUSIVE // KARARSIZ]".magenta().bold());
+            println!(
+                "  Verdict / {}: {} {}",
+                "Nihai Durum".dimmed(),
+                "[NOTICE] [INCONCLUSIVE]".magenta().bold(),
+                format!("[KARARSIZ]").magenta().dimmed()
+            );
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / DEĞERLENDİRME:");
+            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
             println!("  • Target is not an executable PE binary or format cannot be determined.");
-            println!("    (Bu dosya doğrudan çalışan bir PE binary değil, örneğin sıkıştırılmış arşiv.)");
+            println!("{}", "    (Bu dosya doğrudan çalışan bir PE binary değil, örneğin sıkıştırılmış arşiv.)".dimmed());
             println!("  • ACTION: Extract contents to a folder and scan directory.");
-            println!("    (TAVSİYE: Arşivi bir klasöre çıkartıp dosyaları veya klasörü buraya sürükleyin.)");
+            println!("{}", "    (TAVSİYE: Arşivi bir klasöre çıkartıp dosyaları veya klasörü buraya sürükleyin.)".dimmed());
         }
     }
 
@@ -633,11 +684,19 @@ pub fn print_single_summary_box(report: &ScanReport) {
         .filter(|e| matches!(&e.kind, EvidenceKind::DllProxyHook { .. }))
         .count();
     if proxy_hooks > 0 {
-        println!("  • Sideloading Hook: {} system/platform DLL hook(s) / adet DLL kancası tespit edildi.", proxy_hooks);
+        println!(
+            "  • Sideloading Hook: {} system/platform DLL hook(s) {}",
+            proxy_hooks,
+            format!("({} adet sistem DLL kancası tespit edildi)", proxy_hooks).dimmed()
+        );
     }
 
     println!();
-    println!("  {} Scroll up for hashes & PE autopsy / Teknik analiz için terminali yukarı kaydırabilirsiniz.", "[NOTICE]".cyan());
+    println!(
+        "  {} Scroll up for hashes & PE autopsy {}",
+        "[NOTICE]".cyan(),
+        format!("(Teknik analiz için terminali yukarı kaydırabilirsiniz)").dimmed()
+    );
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!();
 }
@@ -662,64 +721,116 @@ pub fn print_directory_summary_box(
 
     println!();
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("{}", "  DIRECTORY AUDIT SUMMARY // KLASÖR ADLİ TARAMA GENEL RAPORU".cyan().bold());
+    println!(
+        "  {} {}",
+        "DIRECTORY AUDIT SUMMARY".cyan().bold(),
+        format!("// KLASÖR ADLİ TARAMA GENEL RAPORU").cyan().dimmed()
+    );
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("  Target / Hedef Klasör  : {}", dir_name.bold());
+    println!("  Target / {}: {}", "Hedef Klasör".dimmed(), dir_name.bold());
     if duplicate_count > 0 {
         let unique = total.saturating_sub(duplicate_count);
         println!(
-            "  Scanned / Taranan      : {} executables / çalıştırılabilir dosya ({} unique, {} duplicates)",
-            total, unique, duplicate_count
+            "  Scanned / {}: {} executables {} ({} unique, {} duplicates)",
+            "Taranan".dimmed(),
+            total,
+            format!("(çalıştırılabilir dosya)").dimmed(),
+            unique,
+            duplicate_count
         );
     } else {
-        println!("  Scanned / Taranan      : {} executables (.exe / .dll) / çalıştırılabilir dosya", total);
+        println!(
+            "  Scanned / {}: {} executables (.exe / .dll) {}",
+            "Taranan".dimmed(),
+            total,
+            format!("(çalıştırılabilir dosya)").dimmed()
+        );
     }
 
     if proxy_hook_count > 0 {
         println!(
-            "  Stats / İstatistik     : {} No Indicators | {} Suspicious (incl. {} Proxy Hooks) | {} High Risk | {} Inconclusive",
+            "  Stats / {}: {} No Indicators | {} Suspicious (incl. {} Proxy Hooks) | {} High Risk | {} Inconclusive",
+            "İstatistik".dimmed(),
             no_indicators, suspicious, proxy_hook_count, high_risk, inconclusive
         );
     } else {
         println!(
-            "  Stats / İstatistik     : {} No Indicators | {} Suspicious | {} High Risk | {} Inconclusive",
+            "  Stats / {}: {} No Indicators | {} Suspicious | {} High Risk | {} Inconclusive",
+            "İstatistik".dimmed(),
             no_indicators, suspicious, high_risk, inconclusive
         );
     }
     println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
 
     if high_risk > 0 {
-        println!("  Final Verdict / Karar  : {}", "[ALERT] [HIGH RISK // TEHLİKELİ DOSYA BULUNDU]".red().bold());
-        println!("  ASSESSMENT / DEĞERLENDİRME:");
-        println!("  • ALERT: {} dangerous file(s) identified in folder / {} adet TEHLİKELİ dosya bulundu!", high_risk, high_risk);
+        println!(
+            "  Final Verdict / {}: {} {}",
+            "Karar".dimmed(),
+            "[ALERT] [HIGH RISK]".red().bold(),
+            format!("[TEHLİKELİ DOSYA BULUNDU]").red().dimmed()
+        );
+        println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
+        println!(
+            "  • ALERT: {} dangerous file(s) identified in folder! {}",
+            high_risk,
+            format!("({} adet tehlikeli dosya tespit edildi!)", high_risk).dimmed()
+        );
         if has_stealer_ioc {
             println!("  • Infostealer or malicious exfiltration channel detected. DO NOT EXECUTE!");
-            println!("    (Bilgi çalıcı veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!)");
+            println!("{}", "    (Bilgi çalıcı veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!)".dimmed());
         } else {
             println!("  • Hostile process injection or malicious loader structure detected. DO NOT EXECUTE!");
-            println!("    (Düşmanca süreç enjeksiyonu veya zararlı kod yapısı tespit edildi. ÇALIŞTIRMAYINIZ!)");
+            println!("{}", "    (Düşmanca süreç enjeksiyonu veya zararlı kod yapısı tespit edildi. ÇALIŞTIRMAYINIZ!)".dimmed());
         }
     } else if suspicious > 0 {
-        println!("  Final Verdict / Karar  : {}", "[NOTICE] [SUSPICIOUS // İNCELEME GEREKTİRİR]".yellow().bold());
-        println!("  ASSESSMENT / DEĞERLENDİRME:");
-        println!("  • {} anomalous file(s) observed / {} adet şüpheli anomali tespit edildi.", suspicious, suspicious);
-        println!("  • Exercise caution if downloaded from an untrusted source / Şüpheli kaynaktan geldiyse dikkat ediniz.");
+        println!(
+            "  Final Verdict / {}: {} {}",
+            "Karar".dimmed(),
+            "[NOTICE] [SUSPICIOUS]".yellow().bold(),
+            format!("[İNCELEME GEREKTİRİR]").yellow().dimmed()
+        );
+        println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
+        println!(
+            "  • {} anomalous file(s) observed. {}",
+            suspicious,
+            format!("({} adet şüpheli anomali tespit edildi.)", suspicious).dimmed()
+        );
+        println!(
+            "  • Exercise caution if downloaded from an untrusted source. {}",
+            format!("(Şüpheli bir kaynaktan indirildiyse dikkat ediniz.)").dimmed()
+        );
     } else {
-        println!("  Final Verdict / Karar  : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
-        println!("  ASSESSMENT / DEĞERLENDİRME:");
+        println!(
+            "  Final Verdict / {}: {} {}",
+            "Karar".dimmed(),
+            "[NO THREAT INDICATORS OBSERVED]".green().bold(),
+            format!("[TEHDİT BELİRTİSİ GÖRÜLMEDİ]").green().dimmed()
+        );
+        println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
         println!("  • No infostealers, trojans, or malware traces found in {} scanned file(s).", total);
-        println!("    (Taranan {} dosyanın hiçbirinde şifre/veri çalıcı, trojan veya zararlı yazılım izine rastlanmadı.)", total);
+        println!("{}", format!("    (Taranan {} dosyanın hiçbirinde şifre/veri çalıcı, trojan veya zararlı yazılım izine rastlanmadı.)", total).dimmed());
     }
 
     if proxy_hook_count > 0 {
-        println!("  • Sideloading: {} platform/system DLL hook(s) / sistem DLL kancası tespit edildi.", proxy_hook_count);
+        println!(
+            "  • Sideloading: {} platform/system DLL hook(s) detected. {}",
+            proxy_hook_count,
+            format!("({} adet sistem DLL kancası tespit edildi)", proxy_hook_count).dimmed()
+        );
         if high_risk == 0 {
-            println!("    (Zero outbound network: likely local license hook or emulator / Yerel mod kancası veya emülatör).");
+            println!(
+                "    Zero outbound network: likely local license hook or emulator. {}",
+                format!("(Dış ağ yok: muhtemelen yerel lisans kancası veya mod emülatörü.)").dimmed()
+            );
         }
     }
 
     println!();
-    println!("  {} Use Navigation menu below to inspect files / Dosyaları incelemek için aşağıdaki menüyü kullanın.", "[NOTICE]".cyan());
+    println!(
+        "  {} Use Navigation menu below to inspect files {}",
+        "[NOTICE]".cyan(),
+        format!("(Dosyaları incelemek için aşağıdaki menüyü kullanın)").dimmed()
+    );
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!();
 }
