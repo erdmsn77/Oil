@@ -550,26 +550,26 @@ pub fn print_hunt_dossier(report: &oil_core::hunt::HuntReport) {
     println!();
 }
 
-/// Renders a human-readable, high-impact Turkish executive summary card for a single file.
+/// Renders a human-readable, high-impact bilingual executive summary card for a single file.
 pub fn print_single_summary_box(report: &ScanReport) {
     let file_name = report
         .identity
         .path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("Hedef Dosya");
+        .unwrap_or("target");
 
     println!();
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("{}", "               ADLİ TARAMA SONUÇ ÖZETİ".cyan().bold());
+    println!("{}", "   FORENSIC EXECUTIVE SUMMARY // ADLİ TARAMA SONUÇ ÖZETİ".cyan().bold());
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("  Hedef Dosya   : {}", file_name.bold());
+    println!("  Target / Hedef Dosya   : {}", file_name.bold());
 
     match report.verdict {
         Tier::HighRisk => {
-            println!("  NİHAİ DURUM   : {}", "[ALERT] [YÜKSEK RİSK // TEHLİKELİ DOSYA]".red().bold());
+            println!("  Verdict / Nihai Durum  : {}", "[ALERT] [HIGH RISK // TEHLİKELİ DOSYA]".red().bold());
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ÖZET DEĞERLENDİRME:");
+            println!("  ASSESSMENT / DEĞERLENDİRME:");
             let has_stealer = report.evidence.iter().any(|e| {
                 matches!(
                     &e.kind,
@@ -580,43 +580,50 @@ pub fn print_single_summary_box(report: &ScanReport) {
                 )
             });
             if has_stealer {
-                println!("  • DİKKAT! Bu dosyada bilgi çalıcı (Stealer), zararlı webhook veya");
-                println!("    veri sızdırma mekanizmaları tespit edildi!");
-                println!("  • TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz!");
+                println!("  • CRITICAL: Infostealer, malicious webhook, or data siphon observed!");
+                println!("    (DİKKAT! Bilgi çalıcı, zararlı webhook veya veri sızdırma mekanizması tespit edildi!)");
+                println!("  • ACTION: DO NOT EXECUTE. Delete or quarantine immediately.");
+                println!("    (TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz.)");
             } else {
-                println!("  • DİKKAT! Bu dosyada yüksek riskli tehdit göstergesi veya zararlı");
-                println!("    kod yapısı (süreç enjeksiyonu / düşmanca yükleyici) tespit edildi!");
-                println!("  • TAVSİYE: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.");
+                println!("  • CRITICAL: High-risk hostile payload / code injection structure detected!");
+                println!("    (DİKKAT! Düşmanca süreç enjeksiyonu veya zararlı yükleyici yapısı tespit edildi!)");
+                println!("  • ACTION: Execution not recommended unless strictly trusted.");
+                println!("    (TAVSİYE: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.)");
             }
         }
         Tier::Suspicious => {
-            println!("  NİHAİ DURUM   : {}", "[NOTICE] [ŞÜPHELİ // DİKKAT GEREKTİRİR]".yellow().bold());
+            println!("  Verdict / Nihai Durum  : {}", "[NOTICE] [SUSPICIOUS // DİKKAT GEREKTİRİR]".yellow().bold());
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ÖZET DEĞERLENDİRME:");
+            println!("  ASSESSMENT / DEĞERLENDİRME:");
             if report.verdict_summary.contains("Untrusted Sideloading Loader")
                 || report.verdict_summary.contains("Local Hook")
             {
-                println!("  • Yerel lisans kancası veya mod mekanizması (Sıfır dış ağ soketi/API'si).");
-                println!("  • TAVSİYE: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz.");
+                println!("  • Untrusted local hook / license emulator (Zero network capabilities).");
+                println!("    (Yerel lisans kancası veya mod mekanizması - Sıfır dış ağ soketi/API'si).");
+                println!("  • ACTION: Safe for offline use; evaluate provenance before executing.");
+                println!("    (TAVSİYE: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz.)");
             } else {
-                println!("  • Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.");
-                println!("  • TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.");
+                println!("  • Structural anomaly, suspicious network import, or high entropy section.");
+                println!("    (Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.)");
+                println!("  • ACTION: Exercise caution if origin is untrusted or unknown.");
+                println!("    (TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.)");
             }
         }
         Tier::NoIndicatorsFound => {
-            println!("  NİHAİ DURUM   : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
+            println!("  Verdict / Nihai Durum  : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ÖZET DEĞERLENDİRME:");
-            println!("  • Dosyada bilinen hiçbir trojan, şifre/veri çalıcı (stealer), arka");
-            println!("    kapı veya fidye yazılımı izine rastlanmadı. Bilinen tehdit göstergesi tespit edilmedi.");
+            println!("  ASSESSMENT / DEĞERLENDİRME:");
+            println!("  • No known trojans, infostealers, backdoors, or ransomware traces found.");
+            println!("    (Dosyada bilinen hiçbir trojan, veri çalıcı veya zararlı yazılım izine rastlanmadı.)");
         }
         Tier::Inconclusive => {
-            println!("  NİHAİ DURUM   : {}", "[NOTICE] [KARARSIZ // SIKIŞTIRILMIŞ ARŞİV]".magenta().bold());
+            println!("  Verdict / Nihai Durum  : {}", "[NOTICE] [INCONCLUSIVE // KARARSIZ]".magenta().bold());
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ÖZET DEĞERLENDİRME:");
-            println!("  • Bu dosya doğrudan çalışan bir PE binary değil (Örn: .7z arşivi).");
-            println!("  • NE YAPMALISINIZ?: Arşivi bir klasöre çıkartıp içindeki dosyaları");
-            println!("    veya klasörü buraya sürükleyin.");
+            println!("  ASSESSMENT / DEĞERLENDİRME:");
+            println!("  • Target is not an executable PE binary or format cannot be determined.");
+            println!("    (Bu dosya doğrudan çalışan bir PE binary değil, örneğin sıkıştırılmış arşiv.)");
+            println!("  • ACTION: Extract contents to a folder and scan directory.");
+            println!("    (TAVSİYE: Arşivi bir klasöre çıkartıp dosyaları veya klasörü buraya sürükleyin.)");
         }
     }
 
@@ -626,16 +633,16 @@ pub fn print_single_summary_box(report: &ScanReport) {
         .filter(|e| matches!(&e.kind, EvidenceKind::DllProxyHook { .. }))
         .count();
     if proxy_hooks > 0 {
-        println!("  • Proxy / Sideloading: {} adet DLL kancası tespit edildi.", proxy_hooks);
+        println!("  • Sideloading Hook: {} system/platform DLL hook(s) / adet DLL kancası tespit edildi.", proxy_hooks);
     }
 
     println!();
-    println!("  {} Teknik hash ve bellek analizi için terminali yukarı kaydırabilirsiniz.", "[NOTICE]".cyan());
+    println!("  {} Scroll up for hashes & PE autopsy / Teknik analiz için terminali yukarı kaydırabilirsiniz.", "[NOTICE]".cyan());
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!();
 }
 
-/// Renders a human-readable, high-impact Turkish executive summary card for a directory audit.
+/// Renders a human-readable, high-impact bilingual executive summary card for a directory audit.
 #[allow(clippy::too_many_arguments)]
 pub fn print_directory_summary_box(
     dir_path: &std::path::Path,
@@ -651,73 +658,68 @@ pub fn print_directory_summary_box(
     let dir_name = dir_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("Hedef Klasör");
+        .unwrap_or("Target Directory");
 
     println!();
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("{}", "         KLASÖR ADLİ TARAMA GENEL SONUÇ RAPORU".cyan().bold());
+    println!("{}", "  DIRECTORY AUDIT SUMMARY // KLASÖR ADLİ TARAMA GENEL RAPORU".cyan().bold());
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("  Hedef Klasör  : {}", dir_name.bold());
+    println!("  Target / Hedef Klasör  : {}", dir_name.bold());
     if duplicate_count > 0 {
         let unique = total.saturating_sub(duplicate_count);
         println!(
-            "  Taranan Dosya : {} adet çalıştırılabilir dosya ({} benzersiz, {} tekrarlanan hash)",
+            "  Scanned / Taranan      : {} executables / çalıştırılabilir dosya ({} unique, {} duplicates)",
             total, unique, duplicate_count
         );
     } else {
-        println!("  Taranan Dosya : {} adet çalıştırılabilir dosya (.exe / .dll)", total);
+        println!("  Scanned / Taranan      : {} executables (.exe / .dll) / çalıştırılabilir dosya", total);
     }
 
     if proxy_hook_count > 0 {
-        if high_risk > 0 {
-            println!(
-                "  İstatistik    : {} Belirtisiz | {} Şüpheli | {} Yüksek Risk ({} Proxy Hook dahil) | {} Kararsız",
-                no_indicators, suspicious, high_risk, proxy_hook_count, inconclusive
-            );
-        } else {
-            println!(
-                "  İstatistik    : {} Belirtisiz | {} Şüpheli ({} Proxy Hook dahil) | {} Yüksek Risk | {} Kararsız",
-                no_indicators, suspicious, proxy_hook_count, high_risk, inconclusive
-            );
-        }
+        println!(
+            "  Stats / İstatistik     : {} No Indicators | {} Suspicious (incl. {} Proxy Hooks) | {} High Risk | {} Inconclusive",
+            no_indicators, suspicious, proxy_hook_count, high_risk, inconclusive
+        );
     } else {
         println!(
-            "  İstatistik    : {} Belirtisiz | {} Şüpheli | {} Yüksek Risk | {} Kararsız",
+            "  Stats / İstatistik     : {} No Indicators | {} Suspicious | {} High Risk | {} Inconclusive",
             no_indicators, suspicious, high_risk, inconclusive
         );
     }
     println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
 
     if high_risk > 0 {
-        println!("  NİHAİ KARAR   : {}", "[ALERT] [YÜKSEK RİSK // TEHLİKELİ DOSYA BULUNDU]".red().bold());
-        println!("  ÖZET DEĞERLENDİRME:");
-        println!("  • DİKKAT! Klasör içinde {} adet TEHLİKELİ dosya tespit edildi!", high_risk);
+        println!("  Final Verdict / Karar  : {}", "[ALERT] [HIGH RISK // TEHLİKELİ DOSYA BULUNDU]".red().bold());
+        println!("  ASSESSMENT / DEĞERLENDİRME:");
+        println!("  • ALERT: {} dangerous file(s) identified in folder / {} adet TEHLİKELİ dosya bulundu!", high_risk, high_risk);
         if has_stealer_ioc {
-            println!("  • Bilgi çalıcı (stealer) veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!");
+            println!("  • Infostealer or malicious exfiltration channel detected. DO NOT EXECUTE!");
+            println!("    (Bilgi çalıcı veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!)");
         } else {
-            println!("  • Düşmanca süreç enjeksiyonu veya zararlı kod yapısı tespit edildi. ÇALIŞTIRMAYINIZ!");
+            println!("  • Hostile process injection or malicious loader structure detected. DO NOT EXECUTE!");
+            println!("    (Düşmanca süreç enjeksiyonu veya zararlı kod yapısı tespit edildi. ÇALIŞTIRMAYINIZ!)");
         }
     } else if suspicious > 0 {
-        println!("  NİHAİ KARAR   : {}", "[NOTICE] [ŞÜPHELİ // İNCELEME GEREKTİRİR]".yellow().bold());
-        println!("  ÖZET DEĞERLENDİRME:");
-        println!("  • Klasör içinde {} adet şüpheli anomali tespit edildi.", suspicious);
-        println!("  • Bilinmeyen veya şüpheli bir kaynaktan indirdiyseniz dikkatli olunuz.");
+        println!("  Final Verdict / Karar  : {}", "[NOTICE] [SUSPICIOUS // İNCELEME GEREKTİRİR]".yellow().bold());
+        println!("  ASSESSMENT / DEĞERLENDİRME:");
+        println!("  • {} anomalous file(s) observed / {} adet şüpheli anomali tespit edildi.", suspicious, suspicious);
+        println!("  • Exercise caution if downloaded from an untrusted source / Şüpheli kaynaktan geldiyse dikkat ediniz.");
     } else {
-        println!("  NİHAİ KARAR   : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
-        println!("  ÖZET DEĞERLENDİRME:");
-        println!("  • Taranan {} dosyanın hiçbirinde şifre/veri çalıcı (stealer), trojan", total);
-        println!("    veya zararlı yazılım izine rastlanmadı. Klasörde bilinen tehdit göstergesi tespit edilmedi.");
+        println!("  Final Verdict / Karar  : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
+        println!("  ASSESSMENT / DEĞERLENDİRME:");
+        println!("  • No infostealers, trojans, or malware traces found in {} scanned file(s).", total);
+        println!("    (Taranan {} dosyanın hiçbirinde şifre/veri çalıcı, trojan veya zararlı yazılım izine rastlanmadı.)", total);
     }
 
     if proxy_hook_count > 0 {
-        println!("  • Proxy / Sideloading: {} adet sistem/platform DLL kancası tespit edildi.", proxy_hook_count);
+        println!("  • Sideloading: {} platform/system DLL hook(s) / sistem DLL kancası tespit edildi.", proxy_hook_count);
         if high_risk == 0 {
-            println!("    (Sıfır dış ağ bağlantısı: Yerel lisans kancası veya platform emülatörü olabilir).");
+            println!("    (Zero outbound network: likely local license hook or emulator / Yerel mod kancası veya emülatör).");
         }
     }
 
     println!();
-    println!("  {} Aşağıdaki Hızlı Navigasyon menüsünü kullanarak şüpheli dosyaları doğrudan inceleyebilirsiniz.", "[NOTICE]".cyan());
+    println!("  {} Use Navigation menu below to inspect files / Dosyaları incelemek için aşağıdaki menüyü kullanın.", "[NOTICE]".cyan());
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!();
 }
