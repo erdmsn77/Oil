@@ -570,16 +570,38 @@ pub fn print_single_summary_box(report: &ScanReport) {
             println!("  NİHAİ DURUM   : {}", "[ALERT] [YÜKSEK RİSK // TEHLİKELİ DOSYA]".red().bold());
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
             println!("  ÖZET DEĞERLENDİRME:");
-            println!("  • DİKKAT! Bu dosyada bilgi çalıcı (Stealer), zararlı webhook veya");
-            println!("    veri sızdırma mekanizmaları tespit edildi!");
-            println!("  • TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz!");
+            let has_stealer = report.evidence.iter().any(|e| {
+                matches!(
+                    &e.kind,
+                    EvidenceKind::DiscordWebhook { .. }
+                        | EvidenceKind::TelegramToken { .. }
+                        | EvidenceKind::CredentialPath { .. }
+                        | EvidenceKind::YaraMatch { .. }
+                )
+            });
+            if has_stealer {
+                println!("  • DİKKAT! Bu dosyada bilgi çalıcı (Stealer), zararlı webhook veya");
+                println!("    veri sızdırma mekanizmaları tespit edildi!");
+                println!("  • TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz!");
+            } else {
+                println!("  • DİKKAT! Bu dosyada yüksek riskli tehdit göstergesi veya zararlı");
+                println!("    kod yapısı (süreç enjeksiyonu / düşmanca yükleyici) tespit edildi!");
+                println!("  • TAVSİYE: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.");
+            }
         }
         Tier::Suspicious => {
             println!("  NİHAİ DURUM   : {}", "[NOTICE] [ŞÜPHELİ // DİKKAT GEREKTİRİR]".yellow().bold());
             println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
             println!("  ÖZET DEĞERLENDİRME:");
-            println!("  • Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.");
-            println!("  • TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.");
+            if report.verdict_summary.contains("Untrusted Sideloading Loader")
+                || report.verdict_summary.contains("Local Hook")
+            {
+                println!("  • Yerel lisans kancası veya mod mekanizması (Sıfır dış ağ soketi/API'si).");
+                println!("  • TAVSİYE: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz.");
+            } else {
+                println!("  • Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.");
+                println!("  • TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.");
+            }
         }
         Tier::NoIndicatorsFound => {
             println!("  NİHAİ DURUM   : {}", "[NO THREAT INDICATORS OBSERVED]".green().bold());
@@ -614,6 +636,7 @@ pub fn print_single_summary_box(report: &ScanReport) {
 }
 
 /// Renders a human-readable, high-impact Turkish executive summary card for a directory audit.
+#[allow(clippy::too_many_arguments)]
 pub fn print_directory_summary_box(
     dir_path: &std::path::Path,
     total: usize,
@@ -623,6 +646,7 @@ pub fn print_directory_summary_box(
     inconclusive: usize,
     proxy_hook_count: usize,
     duplicate_count: usize,
+    has_stealer_ioc: bool,
 ) {
     let dir_name = dir_path
         .file_name()
@@ -668,7 +692,11 @@ pub fn print_directory_summary_box(
         println!("  NİHAİ KARAR   : {}", "[ALERT] [YÜKSEK RİSK // TEHLİKELİ DOSYA BULUNDU]".red().bold());
         println!("  ÖZET DEĞERLENDİRME:");
         println!("  • DİKKAT! Klasör içinde {} adet TEHLİKELİ dosya tespit edildi!", high_risk);
-        println!("  • Bilgi çalıcı (stealer) veya zararlı kod içerebilir. ÇALIŞTIRMAYINIZ!");
+        if has_stealer_ioc {
+            println!("  • Bilgi çalıcı (stealer) veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!");
+        } else {
+            println!("  • Düşmanca süreç enjeksiyonu veya zararlı kod yapısı tespit edildi. ÇALIŞTIRMAYINIZ!");
+        }
     } else if suspicious > 0 {
         println!("  NİHAİ KARAR   : {}", "[NOTICE] [ŞÜPHELİ // İNCELEME GEREKTİRİR]".yellow().bold());
         println!("  ÖZET DEĞERLENDİRME:");
@@ -683,8 +711,8 @@ pub fn print_directory_summary_box(
 
     if proxy_hook_count > 0 {
         println!("  • Proxy / Sideloading: {} adet sistem/platform DLL kancası tespit edildi.", proxy_hook_count);
-        if high_risk == 0 && suspicious == 0 {
-            println!("    (dxgi.dll vb. meşru oyun performans modu veya platform emülatörü olabilir).");
+        if high_risk == 0 {
+            println!("    (Sıfır dış ağ bağlantısı: Yerel lisans kancası veya platform emülatörü olabilir).");
         }
     }
 
@@ -695,7 +723,7 @@ pub fn print_directory_summary_box(
 }
 
 /// Alias for `print_directory_summary_box`
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 #[inline]
 pub fn print_directory_summary(
     dir_path: &std::path::Path,
@@ -706,6 +734,7 @@ pub fn print_directory_summary(
     inconclusive: usize,
     proxy_hook_count: usize,
     duplicate_count: usize,
+    has_stealer_ioc: bool,
 ) {
     print_directory_summary_box(
         dir_path,
@@ -716,6 +745,7 @@ pub fn print_directory_summary(
         inconclusive,
         proxy_hook_count,
         duplicate_count,
+        has_stealer_ioc,
     );
 }
 
@@ -794,6 +824,79 @@ mod tests {
             0,
             2,
             0,
+            false,
+        );
+
+        // High risk with stealer
+        let stealer_report = ScanReport {
+            identity: FileIdentity {
+                path: PathBuf::from("stealer.exe"),
+                size_bytes: 2048,
+                sha256: "1".repeat(64),
+                blake3: "1".repeat(64),
+            },
+            autopsy: None,
+            evidence: vec![oil_core::models::Evidence {
+                kind: EvidenceKind::DiscordWebhook {
+                    url: "https://discord.com/api/webhooks/123/xyz".into(),
+                    encoding: oil_core::models::StringEncoding::Ascii,
+                },
+                is_threat_signal: true,
+                explanation: "test".into(),
+            }],
+            verdict: Tier::HighRisk,
+            verdict_summary: "Stealer detected".into(),
+            files_scanned: 1,
+            files_skipped: 0,
+            skip_reasons: vec![],
+        };
+        print_single_summary_box(&stealer_report);
+        print_directory_summary_box(
+            &PathBuf::from("C:\\test\\dir"),
+            10,
+            7,
+            1,
+            2,
+            0,
+            0,
+            0,
+            true,
+        );
+
+        // High risk without stealer (e.g. process injection)
+        let injection_report = ScanReport {
+            identity: FileIdentity {
+                path: PathBuf::from("injector.exe"),
+                size_bytes: 2048,
+                sha256: "2".repeat(64),
+                blake3: "2".repeat(64),
+            },
+            autopsy: None,
+            evidence: vec![oil_core::models::Evidence {
+                kind: EvidenceKind::InjectionImport {
+                    dll: "kernel32.dll".into(),
+                    functions: vec!["CreateRemoteThread".into()],
+                },
+                is_threat_signal: true,
+                explanation: "test".into(),
+            }],
+            verdict: Tier::HighRisk,
+            verdict_summary: "Injection detected".into(),
+            files_scanned: 1,
+            files_skipped: 0,
+            skip_reasons: vec![],
+        };
+        print_single_summary_box(&injection_report);
+        print_directory_summary_box(
+            &PathBuf::from("C:\\test\\dir"),
+            10,
+            7,
+            1,
+            2,
+            0,
+            0,
+            0,
+            false,
         );
     }
 }

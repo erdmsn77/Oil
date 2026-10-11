@@ -193,60 +193,8 @@ fn run_scan(path: &Path) -> bool {
             }
         }
 
-        // ── Directory Correlation Analysis (Sideloading Suite Elevation) ──
-        // If a directory contains both an unsigned system proxy DLL and an unsigned packed/RWX binary,
-        // elevate both to HighRisk (Hostile Sideloading Loader Suite).
-        let mut suite_folders: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-        for r in &reports {
-            if let Some(parent) = r.identity.path.parent() {
-                let is_unsigned = r.autopsy.as_ref().map(|a| a.signature_valid != Some(true)).unwrap_or(true);
-                let is_proxy = r.evidence.iter().any(|e| matches!(&e.kind, oil_core::models::EvidenceKind::DllProxyHook { shadows_system: true, .. }));
-                if is_unsigned && is_proxy {
-                    let has_packed = reports.iter().any(|other| {
-                        other.identity.path.parent() == Some(parent)
-                            && other.identity.path != r.identity.path
-                            && other.autopsy.as_ref().map(|a| a.signature_valid != Some(true)).unwrap_or(true)
-                            && other.evidence.iter().any(|e| {
-                                matches!(&e.kind, oil_core::models::EvidenceKind::RwxSection { .. } | oil_core::models::EvidenceKind::CrypterProfile { .. })
-                                    || matches!(&e.kind, oil_core::models::EvidenceKind::HighEntropySection { entropy, .. } if *entropy >= 7.90)
-                            })
-                    });
-                    if has_packed {
-                        suite_folders.insert(parent.to_path_buf());
-                    }
-                }
-            }
-        }
-
-        if !suite_folders.is_empty() {
-            for r in &mut reports {
-                if let Some(parent) = r.identity.path.parent() {
-                    if suite_folders.contains(parent) {
-                        let is_unsigned = r.autopsy.as_ref().map(|a| a.signature_valid != Some(true)).unwrap_or(true);
-                        let is_proxy = r.evidence.iter().any(|e| matches!(&e.kind, oil_core::models::EvidenceKind::DllProxyHook { shadows_system: true, .. }));
-                        let is_packed = r.evidence.iter().any(|e| {
-                            matches!(&e.kind, oil_core::models::EvidenceKind::RwxSection { .. } | oil_core::models::EvidenceKind::CrypterProfile { .. })
-                                || matches!(&e.kind, oil_core::models::EvidenceKind::HighEntropySection { entropy, .. } if *entropy >= 7.90)
-                        });
-
-                        if is_unsigned && (is_proxy || is_packed) {
-                            r.verdict = oil_core::models::Tier::HighRisk;
-                            r.verdict_summary = if is_proxy {
-                                format!(
-                                    "Hostile DLL Sideloading Suite: Unsigned proxy DLL ('{}') co-located with packed loader in folder.",
-                                    r.identity.path.file_name().and_then(|n| n.to_str()).unwrap_or("dll")
-                                )
-                            } else {
-                                format!(
-                                    "Hostile DLL Sideloading Suite: Unsigned packed/RWX binary ('{}') co-located with proxy hook in folder.",
-                                    r.identity.path.file_name().and_then(|n| n.to_str()).unwrap_or("dll")
-                                )
-                            };
-                        }
-                    }
-                }
-            }
-        }
+        // ── Directory Correlation Analysis (Sideloading Suite Evaluation) ──
+        oil_core::risk::correlate_sideloading_suite(&mut reports);
 
         // Print dossiers with correlated verdicts
         for (idx, report) in reports.iter().enumerate() {
@@ -288,6 +236,18 @@ fn run_scan(path: &Path) -> bool {
             })
             .sum();
 
+        let has_stealer_ioc = reports.iter().any(|r| {
+            r.evidence.iter().any(|e| {
+                matches!(
+                    &e.kind,
+                    oil_core::models::EvidenceKind::DiscordWebhook { .. }
+                        | oil_core::models::EvidenceKind::TelegramToken { .. }
+                        | oil_core::models::EvidenceKind::CredentialPath { .. }
+                        | oil_core::models::EvidenceKind::YaraMatch { .. }
+                )
+            })
+        });
+
         // Executive summary box at the end of directory audit
         output::print_directory_summary_box(
             path,
@@ -298,6 +258,7 @@ fn run_scan(path: &Path) -> bool {
             inconclusive,
             proxy_hook_count,
             duplicate_count,
+            has_stealer_ioc,
         );
 
         // Print flagged files priority breakdown table
@@ -330,7 +291,11 @@ fn run_scan(path: &Path) -> bool {
                 };
 
                 let is_signed = r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true);
-                let priority_badge = if r.verdict == oil_core::models::Tier::HighRisk {
+                let priority_badge = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                    || r.verdict_summary.contains("Local Hook")
+                {
+                    "[ŞÜPHELİ // YEREL HOOK MEKANİZMASI]".yellow().bold()
+                } else if r.verdict == oil_core::models::Tier::HighRisk {
                     "[YÜKSEK ÖNCELİK // HOSTILE LOADER]".red().bold()
                 } else if is_signed {
                     "[DÜŞÜK ÖNCELİK // VENDOR KORUMASI]".cyan().bold()
@@ -345,8 +310,12 @@ fn run_scan(path: &Path) -> bool {
                     priority_badge,
                     r.identity.path.display().to_string().bold()
                 );
-                let tr_reason = if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
-                    "Düşmanca Yan Yükleme Paketi: İmzasız proxy DLL (version.dll) ve paketlenmiş loader (PYG64.dll) aynı klasörde."
+                let tr_reason = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                    || r.verdict_summary.contains("Local Hook")
+                {
+                    "Yerel Kanca Mekanizması: İmzasız proxy DLL ve paketlenmiş loader aynı klasörde (Sıfır ağ/soket yeteneği, olası lisans baypası veya mod kancası)."
+                } else if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
+                    "Düşmanca Yan Yükleme Paketi: İmzasız proxy DLL ve paketlenmiş loader aynı klasörde (Ağ/enjeksiyon/zararlı IOC eşleşti)."
                 } else if r.verdict_summary.contains("search-order hijacking") || r.verdict_summary.contains("proxy hook") {
                     "Windows sistem DLL gölgeleme / proxy hook ('version.dll' sistem kütüphanesini taklit ediyor)"
                 } else if r.verdict_summary.contains("Process injection APIs paired with outbound network") {
@@ -388,6 +357,7 @@ fn run_scan(path: &Path) -> bool {
             inconclusive,
             proxy_hook_count,
             duplicate_count,
+            has_stealer_ioc,
         );
 
         true
@@ -407,6 +377,7 @@ fn run_scan(path: &Path) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_post_scan_navigation(
     reports: &[oil_core::models::ScanReport],
     dir_path: &Path,
@@ -417,6 +388,7 @@ fn handle_post_scan_navigation(
     inconclusive: usize,
     proxy_hook_count: usize,
     duplicate_count: usize,
+    has_stealer_ioc: bool,
 ) {
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
@@ -495,7 +467,11 @@ fn handle_post_scan_navigation(
                             _ => "[DİKKAT]".cyan().bold(),
                         };
 
-                        let priority_badge = if r.verdict == oil_core::models::Tier::HighRisk {
+                        let priority_badge = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                            || r.verdict_summary.contains("Local Hook")
+                        {
+                            "[ŞÜPHELİ // YEREL HOOK MEKANİZMASI]".yellow().bold()
+                        } else if r.verdict == oil_core::models::Tier::HighRisk {
                             "[YÜKSEK ÖNCELİK // HOSTILE LOADER]".red().bold()
                         } else if r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true) {
                             "[DÜŞÜK ÖNCELİK // VENDOR KORUMASI]".cyan().bold()
@@ -510,8 +486,12 @@ fn handle_post_scan_navigation(
                             priority_badge,
                             r.identity.path.display().to_string().bold()
                         );
-                        let tr_reason = if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
-                            "Düşmanca Yan Yükleme Paketi: İmzasız proxy DLL (version.dll) ve paketlenmiş loader (PYG64.dll) aynı klasörde tespit edildi."
+                        let tr_reason = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                            || r.verdict_summary.contains("Local Hook")
+                        {
+                            "Yerel Kanca Mekanizması: İmzasız proxy DLL ve paketleyici ikilisi (Sıfır ağ/soket yeteneği, olası lisans baypası veya mod kancası)."
+                        } else if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
+                            "Düşmanca Yan Yükleme Paketi: İmzasız proxy DLL ve paketlenmiş loader aynı klasörde tespit edildi (Ağ/enjeksiyon/zararlı IOC eşleşti)."
                         } else if r.verdict_summary.contains("search-order hijacking") || r.verdict_summary.contains("proxy hook") {
                             "Sistem DLL gölgeleme / proxy hook ('version.dll' sistem kütüphanesini taklit ediyor)"
                         } else if r.verdict_summary.contains("Process injection APIs paired with outbound network") {
@@ -586,6 +566,7 @@ fn handle_post_scan_navigation(
                     inconclusive,
                     proxy_hook_count,
                     duplicate_count,
+                    has_stealer_ioc,
                 );
             }
             _ => {

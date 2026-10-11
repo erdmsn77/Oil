@@ -4,8 +4,8 @@
 //! Evaluates accumulated evidence from PE Autopsy and IOC scanning,
 //! strictly enforcing multi-signal combinations and avoiding single-signal false alarms.
 
-use crate::models::{Evidence, EvidenceKind, Tier};
-use std::path::Path;
+use crate::models::{Evidence, EvidenceKind, ScanReport, Tier};
+use std::path::{Path, PathBuf};
 
 /// High-level format classification to ensure epistemic honesty during triage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -465,6 +465,19 @@ pub fn evaluate_risk(
         score_breakdown.push(format!("-{} Mitigation: Authenticode digital signature verified", mitigation));
     }
 
+    // Isolated or local proxy hook guard:
+    // If a proxy hook lacks network capabilities, process injection APIs, and stealer IOCs,
+    // it must not be elevated to HighRisk merely due to packer/entropy anomalies.
+    let is_hostile_sideload_vector = has_injection_import
+        || has_network_import
+        || has_webhook_or_telegram
+        || distinct_browser_targets >= 2
+        || has_yara_match
+        || has_powershell_dropper;
+    if has_sideload_proxy && !is_hostile_sideload_vector {
+        threat_score = threat_score.min(55);
+    }
+
     // ──────────────────────────────────────────────
     // 3. DECISION TIERS (Thresholds: >=60 HighRisk, 20..59 Suspicious, <20 NoIndicatorsFound)
     // ──────────────────────────────────────────────
@@ -505,7 +518,9 @@ pub fn evaluate_risk(
     }
 
     if threat_score >= 20 {
-        let summary = if has_crypter_profile {
+        let summary = if has_sideload_proxy && (has_rwx_section || has_high_entropy_section || has_crypter_profile) {
+            "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)".to_string()
+        } else if has_crypter_profile {
             "Suspicious crypter/packer structural anomaly detected.".to_string()
         } else if has_sideload_proxy && has_rwx_section {
             format!("Self-modifying runtime-unpacked proxy DLL detected ('{}').", sideload_dll_name)
@@ -552,6 +567,155 @@ pub fn evaluate_risk(
             "Coherent PE section structure and entropy within normal distribution.".to_string(),
             "Zero matched stealer patterns, exfiltration pipes, or injection anomalies.".to_string(),
         ],
+    }
+}
+
+/// Correlates multiple scan reports within directory scopes to evaluate DLL sideloading loader suites.
+///
+/// Implements forensic differentiation:
+/// - If the suite (e.g. unsigned proxy DLL + unsigned packed/crypter binary) has ZERO network capabilities,
+///   ZERO process injection APIs, and ZERO stealer/exfiltration IOCs:
+///   -> Verdict: Tier::Suspicious
+///   -> Summary: "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)"
+/// - ONLY if either file in the suite exhibits active network capabilities (ws2_32, wininet, etc.),
+///   process injection APIs (CreateRemoteThread, etc.), or stealer IOCs:
+///   -> Verdict: Tier::HighRisk
+///   -> Summary: "Hostile DLL Sideloading Suite: ..."
+pub fn correlate_sideloading_suite(reports: &mut [ScanReport]) {
+    use std::collections::{HashMap, HashSet};
+
+    // Group report indices by their parent directory
+    let mut dir_map: HashMap<PathBuf, Vec<usize>> = HashMap::new();
+    for (idx, r) in reports.iter().enumerate() {
+        if let Some(parent) = r.identity.path.parent() {
+            dir_map.entry(parent.to_path_buf()).or_default().push(idx);
+        }
+    }
+
+    for indices in dir_map.values() {
+        let mut proxy_indices = Vec::new();
+        let mut packed_indices = Vec::new();
+
+        for &idx in indices {
+            let r = &reports[idx];
+            let is_unsigned = r
+                .autopsy
+                .as_ref()
+                .map(|a| a.signature_valid != Some(true))
+                .unwrap_or(true);
+            if !is_unsigned {
+                continue;
+            }
+
+            let is_proxy = r.evidence.iter().any(|e| {
+                matches!(&e.kind, EvidenceKind::DllProxyHook { shadows_system: true, .. })
+            });
+
+            let is_packed = r.evidence.iter().any(|e| {
+                matches!(
+                    &e.kind,
+                    EvidenceKind::RwxSection { .. } | EvidenceKind::CrypterProfile { .. }
+                ) || matches!(&e.kind, EvidenceKind::HighEntropySection { entropy, .. } if *entropy >= 7.90)
+            });
+
+            if is_proxy {
+                proxy_indices.push(idx);
+            }
+            if is_packed {
+                packed_indices.push(idx);
+            }
+        }
+
+        // Require at least one proxy DLL and at least one packed binary, and distinct files
+        let has_distinct_pair = !proxy_indices.is_empty()
+            && !packed_indices.is_empty()
+            && proxy_indices.iter().any(|&pi| packed_indices.iter().any(|&pki| pi != pki));
+
+        if !has_distinct_pair {
+            continue;
+        }
+
+        let mut suite_indices = HashSet::new();
+        for &pi in &proxy_indices {
+            suite_indices.insert(pi);
+        }
+        for &pki in &packed_indices {
+            suite_indices.insert(pki);
+        }
+
+        // Inspect the suite for network capabilities, process injection APIs, or stealer IOCs
+        let mut suite_has_network = false;
+        let mut suite_has_injection = false;
+        let mut suite_has_stealer = false;
+
+        for &idx in &suite_indices {
+            let r = &reports[idx];
+
+            // 1. Network check
+            if r.evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::NetworkImport { .. })) {
+                suite_has_network = true;
+            }
+            if let Some(ref autopsy) = r.autopsy {
+                if autopsy.imports.iter().any(|imp| {
+                    let dll = imp.dll_name.to_lowercase();
+                    ["ws2_32.dll", "wininet.dll", "winhttp.dll", "urlmon.dll"]
+                        .contains(&dll.as_str())
+                }) {
+                    suite_has_network = true;
+                }
+            }
+
+            // 2. Process injection check
+            if r.evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::InjectionImport { .. })) {
+                suite_has_injection = true;
+            }
+
+            // 3. Stealer / exfiltration / hostile IOCs check
+            if r.evidence.iter().any(|e| {
+                matches!(
+                    &e.kind,
+                    EvidenceKind::DiscordWebhook { .. }
+                        | EvidenceKind::TelegramToken { .. }
+                        | EvidenceKind::CredentialPath { .. }
+                        | EvidenceKind::PowerShellCommand { .. }
+                        | EvidenceKind::YaraMatch { .. }
+                )
+            }) {
+                suite_has_stealer = true;
+            }
+        }
+
+        let is_hostile = suite_has_network || suite_has_injection || suite_has_stealer;
+
+        for &idx in &suite_indices {
+            let r = &mut reports[idx];
+            let is_proxy = proxy_indices.contains(&idx);
+            let file_name = r
+                .identity
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("dll")
+                .to_string();
+
+            if is_hostile {
+                r.verdict = Tier::HighRisk;
+                r.verdict_summary = if is_proxy {
+                    format!(
+                        "Hostile DLL Sideloading Suite: Unsigned proxy DLL ('{}') co-located with packed loader in folder.",
+                        file_name
+                    )
+                } else {
+                    format!(
+                        "Hostile DLL Sideloading Suite: Unsigned packed/RWX binary ('{}') co-located with proxy hook in folder.",
+                        file_name
+                    )
+                };
+            } else {
+                r.verdict = Tier::Suspicious;
+                r.verdict_summary = "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)".to_string();
+            }
+        }
     }
 }
 
@@ -976,7 +1140,291 @@ mod tests {
             Tier::Suspicious,
             "Proxy DLL with RWX section must yield SUSPICIOUS"
         );
-        assert!(eval.summary.contains("Self-modifying runtime-unpacked proxy DLL"));
+        assert!(eval.summary.contains("Untrusted Sideloading Loader") || eval.summary.contains("Self-modifying"));
+    }
+
+    #[test]
+    fn test_dll_proxy_hook_plus_crypter_zero_network_is_suspicious() {
+        // Proxy hook shadowing system library + crypter profile without network/injection must remain SUSPICIOUS
+        let evidence = vec![
+            Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "version.dll".to_string(),
+                    shadows_system: true,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::CrypterProfile {
+                    indicators: vec!["minimal_code".to_string()],
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+        ];
+        let eval = evaluate_risk(&evidence, true, &FileFormatHint::PeExecutable);
+        assert_eq!(
+            eval.tier,
+            Tier::Suspicious,
+            "Local proxy hook + crypter profile with zero network capabilities must yield SUSPICIOUS"
+        );
+        assert_eq!(
+            eval.summary,
+            "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)"
+        );
+    }
+
+    fn create_dummy_report(
+        path: PathBuf,
+        evidence: Vec<Evidence>,
+        signature_valid: Option<bool>,
+    ) -> ScanReport {
+        use crate::models::{FileIdentity, PeAutopsy};
+        ScanReport {
+            identity: FileIdentity {
+                path,
+                size_bytes: 1024,
+                sha256: "0".repeat(64),
+                blake3: "0".repeat(64),
+            },
+            autopsy: Some(PeAutopsy {
+                is_pe: true,
+                is_64bit: true,
+                entry_point: 0x1000,
+                sections: vec![],
+                imports: vec![],
+                exports: vec![],
+                overlay_size: 0,
+                signature_valid,
+                signature_signer: None,
+                security_directory: None,
+            }),
+            evidence,
+            verdict: Tier::Suspicious,
+            verdict_summary: "Initial".into(),
+            files_scanned: 1,
+            files_skipped: 0,
+            skip_reasons: vec![],
+        }
+    }
+
+    #[test]
+    fn test_sideloading_suite_zero_network_is_suspicious() {
+        // CATIA_32 scenario: version.dll (proxy) + PYG64.dll (packed/crypter) in same folder
+        let folder = PathBuf::from("C:\\CATIA_32");
+        let version_dll = create_dummy_report(
+            folder.join("version.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "version.dll".to_string(),
+                    shadows_system: true,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            None,
+        );
+        let pyg_dll = create_dummy_report(
+            folder.join("PYG64.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::HighEntropySection {
+                    name: ".text".to_string(),
+                    entropy: 7.95,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            None,
+        );
+
+        let mut reports = vec![version_dll, pyg_dll];
+        correlate_sideloading_suite(&mut reports);
+
+        assert_eq!(reports[0].verdict, Tier::Suspicious);
+        assert_eq!(reports[1].verdict, Tier::Suspicious);
+        assert_eq!(
+            reports[0].verdict_summary,
+            "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)"
+        );
+        assert_eq!(
+            reports[1].verdict_summary,
+            "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)"
+        );
+    }
+
+    #[test]
+    fn test_sideloading_suite_with_network_is_high_risk() {
+        // Sideloading suite with active network capability (ws2_32)
+        let folder = PathBuf::from("C:\\MalwareSuite");
+        let version_dll = create_dummy_report(
+            folder.join("version.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "version.dll".to_string(),
+                    shadows_system: true,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            None,
+        );
+        let payload_dll = create_dummy_report(
+            folder.join("payload.dll"),
+            vec![
+                Evidence {
+                    kind: EvidenceKind::HighEntropySection {
+                        name: ".pack".to_string(),
+                        entropy: 7.95,
+                    },
+                    is_threat_signal: true,
+                    explanation: "test".to_string(),
+                },
+                Evidence {
+                    kind: EvidenceKind::NetworkImport {
+                        dll: "ws2_32.dll".to_string(),
+                        functions: vec!["connect".to_string()],
+                    },
+                    is_threat_signal: true,
+                    explanation: "test".to_string(),
+                },
+            ],
+            None,
+        );
+
+        let mut reports = vec![version_dll, payload_dll];
+        correlate_sideloading_suite(&mut reports);
+
+        assert_eq!(reports[0].verdict, Tier::HighRisk);
+        assert_eq!(reports[1].verdict, Tier::HighRisk);
+        assert!(reports[0].verdict_summary.contains("Hostile DLL Sideloading Suite"));
+        assert!(reports[1].verdict_summary.contains("Hostile DLL Sideloading Suite"));
+    }
+
+    #[test]
+    fn test_sideloading_suite_with_injection_is_high_risk() {
+        // Sideloading suite with process injection capability
+        let folder = PathBuf::from("C:\\InjectorSuite");
+        let version_dll = create_dummy_report(
+            folder.join("version.dll"),
+            vec![
+                Evidence {
+                    kind: EvidenceKind::DllProxyHook {
+                        dll_name: "version.dll".to_string(),
+                        shadows_system: true,
+                    },
+                    is_threat_signal: true,
+                    explanation: "test".to_string(),
+                },
+                Evidence {
+                    kind: EvidenceKind::InjectionImport {
+                        dll: "kernel32.dll".to_string(),
+                        functions: vec!["CreateRemoteThread".to_string()],
+                    },
+                    is_threat_signal: true,
+                    explanation: "test".to_string(),
+                },
+            ],
+            None,
+        );
+        let loader_dll = create_dummy_report(
+            folder.join("loader.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::RwxSection {
+                    name: ".text".to_string(),
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            None,
+        );
+
+        let mut reports = vec![version_dll, loader_dll];
+        correlate_sideloading_suite(&mut reports);
+
+        assert_eq!(reports[0].verdict, Tier::HighRisk);
+        assert_eq!(reports[1].verdict, Tier::HighRisk);
+    }
+
+    #[test]
+    fn test_sideloading_suite_with_stealer_ioc_is_high_risk() {
+        // Sideloading suite with Discord webhook
+        let folder = PathBuf::from("C:\\StealerSuite");
+        let version_dll = create_dummy_report(
+            folder.join("version.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "version.dll".to_string(),
+                    shadows_system: true,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            None,
+        );
+        let stealer_dll = create_dummy_report(
+            folder.join("stealer.dll"),
+            vec![
+                Evidence {
+                    kind: EvidenceKind::CrypterProfile {
+                        indicators: vec!["packer".to_string()],
+                    },
+                    is_threat_signal: true,
+                    explanation: "test".to_string(),
+                },
+                Evidence {
+                    kind: EvidenceKind::DiscordWebhook {
+                        url: "https://discord.com/api/webhooks/123/xyz".to_string(),
+                        encoding: StringEncoding::Ascii,
+                    },
+                    is_threat_signal: true,
+                    explanation: "test".to_string(),
+                },
+            ],
+            None,
+        );
+
+        let mut reports = vec![version_dll, stealer_dll];
+        correlate_sideloading_suite(&mut reports);
+
+        assert_eq!(reports[0].verdict, Tier::HighRisk);
+        assert_eq!(reports[1].verdict, Tier::HighRisk);
+    }
+
+    #[test]
+    fn test_sideloading_suite_signed_proxy_is_not_elevated() {
+        // Valid digital signature on proxy DLL -> not an untrusted sideloading suite
+        let folder = PathBuf::from("C:\\SignedApp");
+        let signed_dll = create_dummy_report(
+            folder.join("version.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "version.dll".to_string(),
+                    shadows_system: true,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            Some(true),
+        );
+        let packed_dll = create_dummy_report(
+            folder.join("data.dll"),
+            vec![Evidence {
+                kind: EvidenceKind::HighEntropySection {
+                    name: ".text".to_string(),
+                    entropy: 7.95,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            }],
+            None,
+        );
+
+        let mut reports = vec![signed_dll, packed_dll];
+        correlate_sideloading_suite(&mut reports);
+
+        assert_eq!(reports[0].verdict_summary, "Initial");
+        assert_eq!(reports[1].verdict_summary, "Initial");
     }
 }
 
