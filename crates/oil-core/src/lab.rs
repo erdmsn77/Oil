@@ -98,7 +98,8 @@ pub fn create_minimal_pe(section_name: &str, payload: &[u8]) -> Vec<u8> {
 }
 
 fn decode_fixture(bytes: &[u8]) -> Vec<u8> {
-    bytes.iter().map(|&b| b ^ 0xAA).collect()
+    let key = std::hint::black_box(0xAAu8);
+    bytes.iter().map(|&b| b ^ key).collect()
 }
 
 /// Generates the bench_clean synthetic binary.
