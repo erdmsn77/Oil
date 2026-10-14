@@ -103,8 +103,7 @@ fn scan_zip_archive_internal(
     }
 
     let cursor = Cursor::new(data);
-    let mut zip = ZipArchive::new(cursor)
-        .map_err(|e| ArchiveError::MalformedZip(e.to_string()))?;
+    let mut zip = ZipArchive::new(cursor).map_err(|e| ArchiveError::MalformedZip(e.to_string()))?;
 
     let file_count = zip.len();
     if file_count > MAX_ARCHIVE_FILES {
@@ -227,12 +226,16 @@ fn scan_zip_archive_internal(
             continue;
         }
 
-        let entry_hint = crate::risk::detect_format_hint(Some(Path::new(&file_name)), &file_buf, false);
+        let entry_hint =
+            crate::risk::detect_format_hint(Some(Path::new(&file_name)), &file_buf, false);
 
         // If inner file is an unsupported container/archive format, we cannot inspect its contents:
         if let crate::risk::FileFormatHint::UnsupportedContainer(container_name) = entry_hint {
             files_skipped += 1;
-            skip_reasons.push(format!("{}: Unsupported container format ({})", file_name, container_name));
+            skip_reasons.push(format!(
+                "{}: Unsupported container format ({})",
+                file_name, container_name
+            ));
             if worst_tier < Tier::Inconclusive {
                 worst_tier = Tier::Inconclusive;
             }
@@ -243,7 +246,11 @@ fn scan_zip_archive_internal(
         let is_pe_header = file_buf.len() > 2 && &file_buf[0..2] == b"MZ";
         let should_analyze = is_pe_header
             || is_executable_or_script(&file_name)
-            || matches!(entry_hint, crate::risk::FileFormatHint::Script | crate::risk::FileFormatHint::CorruptExecutable(_));
+            || matches!(
+                entry_hint,
+                crate::risk::FileFormatHint::Script
+                    | crate::risk::FileFormatHint::CorruptExecutable(_)
+            );
 
         if !should_analyze {
             // Text, images, audio, readmes etc.
@@ -271,7 +278,8 @@ fn scan_zip_archive_internal(
         file_evidence.extend(ioc_ev);
 
         // Stage 3: Risk Evaluation
-        let format_hint = crate::risk::detect_format_hint(Some(Path::new(&file_name)), &file_buf, is_pe);
+        let format_hint =
+            crate::risk::detect_format_hint(Some(Path::new(&file_name)), &file_buf, is_pe);
         let eval = evaluate_risk(&file_evidence, is_pe, &format_hint);
         if eval.tier > worst_tier {
             worst_tier = eval.tier;
@@ -293,7 +301,10 @@ fn scan_zip_archive_internal(
     let verdict_summary = match worst_tier {
         Tier::HighRisk => {
             let note = if files_skipped > 0 {
-                format!(" (Caution: {} uninspected/encrypted entries were also skipped).", files_skipped)
+                format!(
+                    " (Caution: {} uninspected/encrypted entries were also skipped).",
+                    files_skipped
+                )
             } else {
                 String::new()
             };
@@ -355,7 +366,8 @@ mod tests {
     fn create_test_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut buf = Vec::new();
         let mut writer = ZipWriter::new(Cursor::new(&mut buf));
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for (name, content) in files {
             writer.start_file(*name, options).unwrap();
@@ -386,8 +398,14 @@ mod tests {
 
         let report = scan_zip_archive(&zip_data, Path::new("test_trojan.zip"), 0).unwrap();
         assert_eq!(report.verdict, Tier::HighRisk);
-        assert!(report.evidence.iter().any(|e| e.explanation.contains("patch_installer.exe")));
-        assert!(report.evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::DiscordWebhook { .. })));
+        assert!(report
+            .evidence
+            .iter()
+            .any(|e| e.explanation.contains("patch_installer.exe")));
+        assert!(report
+            .evidence
+            .iter()
+            .any(|e| matches!(&e.kind, EvidenceKind::DiscordWebhook { .. })));
     }
 
     #[test]
@@ -395,10 +413,8 @@ mod tests {
         // Inner zip contains stealer
         let inner_zip = create_test_zip(&[("inner_stealer.exe", &generate_bench_stealer())]);
         // Outer zip contains inner zip
-        let outer_zip = create_test_zip(&[
-            ("notes.txt", b"outer notes"),
-            ("nested.zip", &inner_zip),
-        ]);
+        let outer_zip =
+            create_test_zip(&[("notes.txt", b"outer notes"), ("nested.zip", &inner_zip)]);
 
         let report = scan_zip_archive(&outer_zip, Path::new("outer.zip"), 0).unwrap();
         assert_eq!(report.verdict, Tier::HighRisk);
@@ -420,7 +436,12 @@ mod tests {
         let report = scan_zip_archive(&buf, Path::new("locked.zip"), 0).unwrap();
         assert_eq!(report.verdict, Tier::Inconclusive);
         assert!(report.files_skipped >= 1);
-        assert!(report.skip_reasons.iter().any(|r| r.contains("cannot inspect") || r.contains("Encrypted") || r.contains("Failed to read")));
+        assert!(report
+            .skip_reasons
+            .iter()
+            .any(|r| r.contains("cannot inspect")
+                || r.contains("Encrypted")
+                || r.contains("Failed to read")));
     }
 
     #[test]
@@ -430,8 +451,8 @@ mod tests {
         let enc_options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .with_deprecated_encryption(b"password123");
-        let plain_options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let plain_options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         writer.start_file("secret.doc", enc_options).unwrap();
         writer.write_all(b"secret payload").unwrap();

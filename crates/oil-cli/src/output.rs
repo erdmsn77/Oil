@@ -3,14 +3,21 @@
 //! GDD §5.1 & §5.2 — Renders the scan report into the distinctive
 //! cyber-forensic terminal output format.
 
+use crate::lang::Language;
 use colored::Colorize;
 use oil_core::models::{DiffReport, EvidenceKind, PatchCategory, ScanReport, Tier};
 
 /// Renders a full forensic dossier for a scan report.
 pub fn print_dossier(report: &ScanReport) {
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════".dimmed());
-    println!("{}", "OIL FORENSIC TRIAGE ENGINE v0.1.0".bright_blue().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════".dimmed()
+    );
+    println!(
+        "{}",
+        "OIL FORENSIC TRIAGE ENGINE v0.1.0".bright_blue().bold()
+    );
     println!(
         "{} {} [Size: {} KB]",
         "TARGET:".green().bold(),
@@ -42,7 +49,12 @@ pub fn print_dossier(report: &ScanReport) {
         if report.verdict == Tier::HighRisk {
             println!("{}", "SMOKING GUN (CRITICAL ARTIFACTS FOUND):".red().bold());
         } else {
-            println!("{}", "OBSERVED INDICATORS (ISOLATED / CONTEXTUAL):".yellow().bold());
+            println!(
+                "{}",
+                "OBSERVED INDICATORS (ISOLATED / CONTEXTUAL):"
+                    .yellow()
+                    .bold()
+            );
         }
         for item in &critical_items {
             match &item.kind {
@@ -70,7 +82,10 @@ pub fn print_dossier(report: &ScanReport) {
                     );
                     println!("    '{}'", path.yellow());
                 }
-                EvidenceKind::YaraMatch { rule_name, namespace } => {
+                EvidenceKind::YaraMatch {
+                    rule_name,
+                    namespace,
+                } => {
                     println!(
                         "  {} [YARA SIGNATURE] Rule match: '{}/{}'",
                         "[ALERT]".red().bold(),
@@ -94,7 +109,9 @@ pub fn print_dossier(report: &ScanReport) {
             .iter()
             .map(|s| {
                 if s.entropy > 7.5 {
-                    format!("{} ({:.2} - high)", s.name, s.entropy).red().to_string()
+                    format!("{} ({:.2} - high)", s.name, s.entropy)
+                        .red()
+                        .to_string()
                 } else {
                     format!("{} ({:.2})", s.name, s.entropy)
                 }
@@ -180,12 +197,18 @@ pub fn print_dossier(report: &ScanReport) {
                 println!(
                     "  • Digital Signature: Valid Authenticode signature ({}) {}",
                     signer.green(),
-                    format!("(Doğrulanmış Windows Authenticode İmzası)").green().dimmed()
+                    "(Doğrulanmış Windows Authenticode İmzası)"
+                        .to_string()
+                        .green()
+                        .dimmed()
                 );
             } else {
                 println!(
                     "  • Digital Signature: Valid Authenticode security directory present. {}",
-                    format!("(Doğrulanmış Authenticode Güvenlik Dizini)").green().dimmed()
+                    "(Doğrulanmış Authenticode Güvenlik Dizini)"
+                        .to_string()
+                        .green()
+                        .dimmed()
                 );
             }
         } else if let Some(false) = autopsy.signature_valid {
@@ -193,12 +216,18 @@ pub fn print_dossier(report: &ScanReport) {
                 println!(
                     "  • Digital Signature: Invalid or unverified Authenticode signature ({}) {}",
                     detail.yellow(),
-                    format!("(Doğrulanmamış veya Geçersiz İmza)").yellow().dimmed()
+                    "(Doğrulanmamış veya Geçersiz İmza)"
+                        .to_string()
+                        .yellow()
+                        .dimmed()
                 );
             } else {
                 println!(
                     "  • Digital Signature: Missing or invalid Authenticode signature. {}",
-                    format!("(Eksik veya Geçersiz Authenticode İmzası)").yellow().dimmed()
+                    "(Eksik veya Geçersiz Authenticode İmzası)"
+                        .to_string()
+                        .yellow()
+                        .dimmed()
                 );
             }
             println!(
@@ -214,7 +243,9 @@ pub fn print_dossier(report: &ScanReport) {
         } else {
             println!(
                 "  • Digital Signature: Missing signature directory (unsigned / modified). {}",
-                format!("(İmzasız veya Değiştirilmiş İkili Dosya)").dimmed()
+                "(İmzasız veya Değiştirilmiş İkili Dosya)"
+                    .to_string()
+                    .dimmed()
             );
             println!(
                 "    {}",
@@ -230,7 +261,11 @@ pub fn print_dossier(report: &ScanReport) {
 
         // Check for DLL Proxy Hook / Sideloading trap
         for item in &report.evidence {
-            if let EvidenceKind::DllProxyHook { dll_name, shadows_system } = &item.kind {
+            if let EvidenceKind::DllProxyHook {
+                dll_name,
+                shadows_system,
+            } = &item.kind
+            {
                 if *shadows_system {
                     println!(
                         "  {} DLL Proxy Hook: Shadows Windows System DLL '{}' in application folder",
@@ -241,6 +276,36 @@ pub fn print_dossier(report: &ScanReport) {
                     println!(
                         "  • Platform Hook / Emulator: Known game/platform proxy hook '{}'",
                         dll_name.cyan().bold()
+                    );
+                }
+            }
+        }
+
+        // Check for Emulator Profile (Goldberg, ColdAPI, SmartSteamEmu, etc.)
+        for item in &report.evidence {
+            if let EvidenceKind::EmulatorProfile {
+                name,
+                is_legitimate,
+                indicators,
+            } = &item.kind
+            {
+                if *is_legitimate {
+                    println!(
+                        "  • Gaming Platform Emulator: {} {}",
+                        name.cyan().bold(),
+                        "(Doğrulanmış Emülatör Mimarisi)"
+                            .to_string()
+                            .cyan()
+                            .dimmed()
+                    );
+                    for ind in indicators {
+                        println!("    └─ {}", ind.dimmed());
+                    }
+                } else {
+                    println!(
+                        "  {} Suspicious/Hollow Gaming Emulator: {}",
+                        "[!]".yellow().bold(),
+                        name.yellow().bold()
                     );
                 }
             }
@@ -270,8 +335,7 @@ pub fn print_dossier(report: &ScanReport) {
             println!("  Factual Summary: {}", report.verdict_summary.yellow());
             println!(
                 "  {}",
-                "Notice: Anomalies observed. Review evidence above before launching."
-                    .dimmed()
+                "Notice: Anomalies observed. Review evidence above before launching.".dimmed()
             );
         }
         Tier::NoIndicatorsFound => {
@@ -300,12 +364,18 @@ pub fn print_dossier(report: &ScanReport) {
 /// Runs the synthetic test benchmarks and renders the GHOST LAB status board.
 pub fn run_lab_suite() {
     println!();
-    println!("{}", "OIL // SYNTHETIC FORENSIC LAB HARNESS (GHOST LAB)".bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".dimmed());
+    println!(
+        "{}",
+        "OIL // SYNTHETIC FORENSIC LAB HARNESS (GHOST LAB)".bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════".dimmed()
+    );
     println!("Testing against safe, in-memory synthetic PE benchmarks...");
     println!();
-
-    let tests: [(&str, Box<dyn Fn() -> Vec<u8>>, Tier, &str); 4] = [
+    type LabBenchmarkCase = (&'static str, Box<dyn Fn() -> Vec<u8>>, Tier, &'static str);
+    let tests: [LabBenchmarkCase; 4] = [
         (
             "bench_clean",
             Box::new(oil_core::lab::generate_bench_clean),
@@ -377,7 +447,10 @@ pub fn run_lab_suite() {
     }
 
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════".dimmed());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════".dimmed()
+    );
     if all_passed {
         println!(
             "{}",
@@ -386,199 +459,442 @@ pub fn run_lab_suite() {
                 .bold()
         );
     } else {
-        println!("{}", "LAB VERDICT: BENCHMARK REGRESSION DETECTED".red().bold());
+        println!(
+            "{}",
+            "LAB VERDICT: BENCHMARK REGRESSION DETECTED".red().bold()
+        );
     }
     println!();
 }
 
 /// Renders the forensic dossier for oil diff (Semantic Patch Analysis).
-pub fn print_diff_dossier(report: &DiffReport) {
+pub fn print_diff_dossier(report: &DiffReport, lang: Language) {
     println!();
-    println!("{}", "OIL // Binary & Crack Forensic Triage Engine v0.1.0".bold());
-    println!("{}", "Diff Mode: Semantic Patch Analysis".cyan());
-    println!(
-        "Base (Original):  {} [SHA-256: {}]",
-        report.original.path.display().to_string().cyan(),
-        report.original.sha256
-    );
-    println!(
-        "Target (Patched): {} [SHA-256: {}]",
-        report.patched.path.display().to_string().cyan(),
-        report.patched.sha256
-    );
-    println!();
-
-    // ──────────────────────────────────────────────
-    // 1. STRUCTURAL DELTA
-    // ──────────────────────────────────────────────
-    println!("{}", "STRUCTURAL DELTA:".bold());
-    if report.new_sections.is_empty() {
-        println!("  • New Sections: None");
-    } else {
+    if lang.is_turkish() {
         println!(
-            "  {} New Sections: {}",
-            "[!]".red().bold(),
-            report.new_sections.join(", ").red()
+            "{}",
+            "OIL // Orijinal & Yama / Crack Karşılaştırma Analizi (v0.1.0)".bold()
         );
-    }
-
-    if report.entry_point_changed {
-        println!("  {} Entry Point: CHANGED", "[!]".red().bold());
-    } else {
-        println!("  • Entry Point: Unchanged");
-    }
-
-    if report.new_imports.is_empty() {
-        println!("  • Import Table: Identical (Zero new networking or injection APIs)");
-    } else {
+        println!("{}", "Fark Analizi: Semantik İkili Yama İncelemesi".cyan());
         println!(
-            "  {} Import Table EXPANDED: {}",
-            "[!]".red().bold(),
-            report
-                .new_imports
-                .iter()
-                .map(|i| format!("{}: {:?}", i.dll_name, i.functions))
-                .collect::<Vec<_>>()
-                .join(", ")
-                .red()
+            "Orijinal Dosya:  {} [SHA-256: {}]",
+            report.original.path.display().to_string().cyan(),
+            report.original.sha256
         );
-    }
-
-    if report.overlay_delta > 0 {
         println!(
-            "  • Overlay: Added {} bytes past PE image end",
-            report.overlay_delta
+            "Yamalı Dosya:    {} [SHA-256: {}]",
+            report.patched.path.display().to_string().cyan(),
+            report.patched.sha256
         );
-    } else {
-        println!("  • Overlay: None added");
-    }
-    println!();
+        println!();
 
-    // ──────────────────────────────────────────────
-    // 2. DIRTY BYTES
-    // ──────────────────────────────────────────────
-    println!(
-        "{} ({} patch regions detected):",
-        "DIRTY BYTES".bold(),
-        report.patches.len()
-    );
-    if report.patches.is_empty() {
-        println!("  • Zero altered byte ranges (Files are identical).");
-    } else {
-        for (idx, patch) in report.patches.iter().enumerate() {
-            let cat_label = match patch.category {
-                PatchCategory::DrmBypass => "DRM_BYPASS".green().bold(),
-                PatchCategory::CodeInjection => "CODE_INJECTION".red().bold(),
-                PatchCategory::DigitalSignature => "DIGITAL_SIGNATURE".cyan().bold(),
-                PatchCategory::Unknown => "UNKNOWN_PATCH".yellow().bold(),
-            };
-
+        // 1. YAPISAL DEĞİŞİKLİKLER
+        println!("{}", "YAPISAL DEĞİŞİKLİKLER:".bold());
+        if report.new_sections.is_empty() {
+            println!("  • Yeni Bölümler: Yok");
+        } else {
             println!(
-                "  Region {} [Offset 0x{:X}, {} bytes in {}]:",
-                idx + 1,
-                patch.offset,
-                patch.size,
-                patch.section
+                "  {} Yeni Bölümler: {}",
+                "[!]".red().bold(),
+                report.new_sections.join(", ").red()
             );
-            if let Some(ref disasm) = patch.disassembly {
-                println!("    - Instruction: {}", disasm.cyan());
+        }
+
+        if report.entry_point_changed {
+            println!(
+                "  {} Giriş Noktası (Entry Point): DEĞİŞTİ",
+                "[!]".red().bold()
+            );
+        } else {
+            println!("  • Giriş Noktası (Entry Point): Değişmedi");
+        }
+
+        if report.new_imports.is_empty() {
+            println!(
+                "  • Dış Fonksiyonlar (Import): Birebir aynı (Yeni ağ veya enjeksiyon API'si yok)"
+            );
+        } else {
+            println!(
+                "  {} Dış Fonksiyonlar GENİŞLETİLDİ: {}",
+                "[!]".red().bold(),
+                report
+                    .new_imports
+                    .iter()
+                    .map(|i| format!("{}: {:?}", i.dll_name, i.functions))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+                    .red()
+            );
+        }
+
+        if report.overlay_delta > 0 {
+            println!(
+                "  • Ek Veri (Overlay): Dosya sonuna {} bayt veri eklendi",
+                report.overlay_delta
+            );
+        } else {
+            println!("  • Ek Veri (Overlay): Eklenmedi");
+        }
+        println!();
+
+        // 2. DEĞİŞTİRİLEN BAYTLAR
+        println!(
+            "{} ({} yama bölgesi tespit edildi):",
+            "DEĞİŞTİRİLEN BAYTLAR".bold(),
+            report.patches.len()
+        );
+        if report.patches.is_empty() {
+            println!("  • Değiştirilen bayt aralığı yok (Dosyalar birebir aynı).");
+        } else {
+            for (idx, patch) in report.patches.iter().enumerate() {
+                let cat_label = match patch.category {
+                    PatchCategory::DrmBypass => "LİSANS_KİLİDİ_BYPASS".green().bold(),
+                    PatchCategory::CodeInjection => "KOD_ENJEKSİYONU".red().bold(),
+                    PatchCategory::DigitalSignature => "DİJİTAL_İMZA".cyan().bold(),
+                    PatchCategory::Unknown => "BİLİNMEYEN_YAMA".yellow().bold(),
+                };
+
+                println!(
+                    "  Bölge {} [Ofset 0x{:X}, {} bayt, Bölüm: {}]:",
+                    idx + 1,
+                    patch.offset,
+                    patch.size,
+                    patch.section
+                );
+                if let Some(ref disasm) = patch.disassembly {
+                    println!("    - Talimat: {}", disasm.cyan());
+                }
+                println!("    - Sınıflandırma: {}", cat_label);
             }
-            println!("    - Classification: {}", cat_label);
         }
-    }
-    println!();
+        println!();
 
-    // ──────────────────────────────────────────────
-    // 3. DELTA FINGERPRINT
-    // ──────────────────────────────────────────────
-    println!(
-        "DELTA FINGERPRINT (SHA-256 of patch delta): {}",
-        report.delta_fingerprint.bright_blue()
-    );
-    println!();
+        // 3. YAMA PARMAK İZİ
+        println!(
+            "YAMA PARMAK İZİ (Delta SHA-256): {}",
+            report.delta_fingerprint.bright_blue()
+        );
+        println!();
 
-    // ──────────────────────────────────────────────
-    // 4. THE VERDICT
-    // ──────────────────────────────────────────────
-    println!("{}", "THE VERDICT:".bold());
-    match report.verdict {
-        Tier::HighRisk => {
-            println!("  {}", "[HIGH RISK]".red().bold());
-            println!("  Factual Summary: {}", report.verdict_summary.red());
+        // 4. KARAR
+        println!("{}", "SONUÇ VE KARAR:".bold());
+        match report.verdict {
+            Tier::HighRisk => {
+                println!("  {}", "[YÜKSEK RİSK]".red().bold());
+                println!("  Özet: {}", report.verdict_summary.red());
+            }
+            Tier::Suspicious => {
+                println!("  {}", "[ŞÜPHELİ]".yellow().bold());
+                println!("  Özet: {}", report.verdict_summary.yellow());
+            }
+            Tier::NoIndicatorsFound => {
+                println!("  {}", "[GÖSTERGE BULUNAMADI]".bright_blue().bold());
+                println!("  Özet: {}", report.verdict_summary);
+            }
+            Tier::Inconclusive => {
+                println!("  {}", "[KARARSIZ]".magenta().bold());
+                println!("  Neden: {}", report.verdict_summary);
+            }
         }
-        Tier::Suspicious => {
-            println!("  {}", "[SUSPICIOUS]".yellow().bold());
-            println!("  Factual Summary: {}", report.verdict_summary.yellow());
+    } else {
+        println!(
+            "{}",
+            "OIL // Binary & Patch Comparison Analysis (v0.1.0)".bold()
+        );
+        println!("{}", "Diff Mode: Semantic Patch Analysis".cyan());
+        println!(
+            "Base (Original):  {} [SHA-256: {}]",
+            report.original.path.display().to_string().cyan(),
+            report.original.sha256
+        );
+        println!(
+            "Target (Patched): {} [SHA-256: {}]",
+            report.patched.path.display().to_string().cyan(),
+            report.patched.sha256
+        );
+        println!();
+
+        // 1. STRUCTURAL DELTA
+        println!("{}", "STRUCTURAL DELTA:".bold());
+        if report.new_sections.is_empty() {
+            println!("  • New Sections: None");
+        } else {
+            println!(
+                "  {} New Sections: {}",
+                "[!]".red().bold(),
+                report.new_sections.join(", ").red()
+            );
         }
-        Tier::NoIndicatorsFound => {
-            println!("  {}", "[NO INDICATORS FOUND]".bright_blue().bold());
-            println!("  Factual Summary: {}", report.verdict_summary);
+
+        if report.entry_point_changed {
+            println!("  {} Entry Point: CHANGED", "[!]".red().bold());
+        } else {
+            println!("  • Entry Point: Unchanged");
         }
-        Tier::Inconclusive => {
-            println!("  {}", "[INCONCLUSIVE]".magenta().bold());
-            println!("  Reason: {}", report.verdict_summary);
+
+        if report.new_imports.is_empty() {
+            println!("  • Import Table: Identical (Zero new networking or injection APIs)");
+        } else {
+            println!(
+                "  {} Import Table EXPANDED: {}",
+                "[!]".red().bold(),
+                report
+                    .new_imports
+                    .iter()
+                    .map(|i| format!("{}: {:?}", i.dll_name, i.functions))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+                    .red()
+            );
+        }
+
+        if report.overlay_delta > 0 {
+            println!(
+                "  • Overlay: Added {} bytes past PE image end",
+                report.overlay_delta
+            );
+        } else {
+            println!("  • Overlay: None added");
+        }
+        println!();
+
+        // 2. DIRTY BYTES
+        println!(
+            "{} ({} patch regions detected):",
+            "DIRTY BYTES".bold(),
+            report.patches.len()
+        );
+        if report.patches.is_empty() {
+            println!("  • Zero altered byte ranges (Files are identical).");
+        } else {
+            for (idx, patch) in report.patches.iter().enumerate() {
+                let cat_label = match patch.category {
+                    PatchCategory::DrmBypass => "DRM_BYPASS".green().bold(),
+                    PatchCategory::CodeInjection => "CODE_INJECTION".red().bold(),
+                    PatchCategory::DigitalSignature => "DIGITAL_SIGNATURE".cyan().bold(),
+                    PatchCategory::Unknown => "UNKNOWN_PATCH".yellow().bold(),
+                };
+
+                println!(
+                    "  Region {} [Offset 0x{:X}, {} bytes in {}]:",
+                    idx + 1,
+                    patch.offset,
+                    patch.size,
+                    patch.section
+                );
+                if let Some(ref disasm) = patch.disassembly {
+                    println!("    - Instruction: {}", disasm.cyan());
+                }
+                println!("    - Classification: {}", cat_label);
+            }
+        }
+        println!();
+
+        // 3. DELTA FINGERPRINT
+        println!(
+            "DELTA FINGERPRINT (SHA-256 of patch delta): {}",
+            report.delta_fingerprint.bright_blue()
+        );
+        println!();
+
+        // 4. THE VERDICT
+        println!("{}", "THE VERDICT:".bold());
+        match report.verdict {
+            Tier::HighRisk => {
+                println!("  {}", "[HIGH RISK]".red().bold());
+                println!("  Factual Summary: {}", report.verdict_summary.red());
+            }
+            Tier::Suspicious => {
+                println!("  {}", "[SUSPICIOUS]".yellow().bold());
+                println!("  Factual Summary: {}", report.verdict_summary.yellow());
+            }
+            Tier::NoIndicatorsFound => {
+                println!("  {}", "[NO INDICATORS FOUND]".bright_blue().bold());
+                println!("  Factual Summary: {}", report.verdict_summary);
+            }
+            Tier::Inconclusive => {
+                println!("  {}", "[INCONCLUSIVE]".magenta().bold());
+                println!("  Reason: {}", report.verdict_summary);
+            }
         }
     }
     println!();
 }
 
 /// Renders the forensic dossier for oil hunt (Persistence and Sideloading Audit).
-pub fn print_hunt_dossier(report: &oil_core::hunt::HuntReport) {
+pub fn print_hunt_dossier(report: &oil_core::hunt::HuntReport, lang: Language) {
     println!();
-    println!("{}", "OIL // Windows Persistence & Sideloading Audit (oil hunt)".bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".dimmed());
-    println!(
-        "Inspected {} persistence mechanisms (Registry Run keys, Startup folders)...",
-        report.total_inspected
-    );
+    if lang.is_turkish() {
+        println!(
+            "{}",
+            "OIL // Windows Başlangıç & Sistem Denetimi (v0.1.0)".bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════".dimmed()
+        );
+        println!(
+            "{} adet başlangıç mekanizması denetlendi (Kayıt Defteri Run anahtarları, Başlangıç klasörleri)...",
+            report.total_inspected
+        );
+    } else {
+        println!(
+            "{}",
+            "OIL // Windows Persistence & Sideloading Audit (v0.1.0)".bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════".dimmed()
+        );
+        println!(
+            "Inspected {} persistence mechanisms (Registry Run keys, Startup folders)...",
+            report.total_inspected
+        );
+    }
     println!();
 
     if report.items.is_empty() {
-        println!("  • Zero persistence entries discovered in standard locations.");
+        if lang.is_turkish() {
+            println!("  • Standart konumlarda herhangi bir başlangıç girdisi bulunamadı.");
+        } else {
+            println!("  • Zero persistence entries discovered in standard locations.");
+        }
     } else {
         for (idx, item) in report.items.iter().enumerate() {
             let status_badge = if let Some(ref scan) = item.scan_report {
                 match scan.verdict {
-                    Tier::HighRisk => "[HIGH RISK]".red().bold(),
-                    Tier::Suspicious => "[SUSPICIOUS]".yellow().bold(),
-                    Tier::NoIndicatorsFound => "[NO INDICATORS FOUND]".bright_blue().bold(),
-                    Tier::Inconclusive => "[INCONCLUSIVE]".magenta().bold(),
+                    Tier::HighRisk => {
+                        if lang.is_turkish() {
+                            "[YÜKSEK RİSK]".red().bold()
+                        } else {
+                            "[HIGH RISK]".red().bold()
+                        }
+                    }
+                    Tier::Suspicious => {
+                        if lang.is_turkish() {
+                            "[ŞÜPHELİ]".yellow().bold()
+                        } else {
+                            "[SUSPICIOUS]".yellow().bold()
+                        }
+                    }
+                    Tier::NoIndicatorsFound => {
+                        if lang.is_turkish() {
+                            "[BULGU YOK]".bright_blue().bold()
+                        } else {
+                            "[NO INDICATORS FOUND]".bright_blue().bold()
+                        }
+                    }
+                    Tier::Inconclusive => {
+                        if lang.is_turkish() {
+                            "[KARARSIZ]".magenta().bold()
+                        } else {
+                            "[INCONCLUSIVE]".magenta().bold()
+                        }
+                    }
                 }
+            } else if lang.is_turkish() {
+                "[DOSYA BULUNAMADI / ÇÖZÜLEMEDİ]".dimmed()
             } else {
                 "[FILE NOT FOUND / UNRESOLVED]".dimmed()
             };
 
+            let source_label = if lang.is_turkish() {
+                "Kaynak"
+            } else {
+                "Source"
+            };
+            let cmd_label = if lang.is_turkish() {
+                "Komut"
+            } else {
+                "Command"
+            };
+            let res_label = if lang.is_turkish() {
+                "Konum"
+            } else {
+                "Resolved"
+            };
+            let note_label = if lang.is_turkish() {
+                "Karar Notu"
+            } else {
+                "Verdict Note"
+            };
+
             println!(
-                "  {} [{}] {} (Source: {})",
+                "  {} [{}] {} ({}: {})",
                 format!("#{}", idx + 1).bold(),
                 item.entry_name.cyan(),
                 status_badge,
+                source_label,
                 item.source.to_string().dimmed()
             );
-            println!("    Command: {}", item.command_line.dimmed());
+            println!("    {}: {}", cmd_label, item.command_line.dimmed());
             if let Some(ref p) = item.resolved_path {
-                println!("    Resolved: {}", p.display().to_string().cyan());
+                println!("    {}: {}", res_label, p.display().to_string().cyan());
             }
             if let Some(ref scan) = item.scan_report {
                 if scan.verdict == Tier::HighRisk || scan.verdict == Tier::Suspicious {
-                    println!("    Verdict Note: {}", scan.verdict_summary.red());
+                    println!("    {}: {}", note_label, scan.verdict_summary.red());
                 }
             }
             println!();
         }
     }
 
-    println!("{}", "═══════════════════════════════════════════════════════════════".dimmed());
-    println!("PERSISTENCE AUDIT SUMMARY:");
-    println!("  • Total Inspected: {}", report.total_inspected);
-    println!("  • No Indicators:   {}", report.no_indicators_count.to_string().bright_blue());
-    println!("  • Suspicious:      {}", report.suspicious_count.to_string().yellow());
-    println!("  • High Risk:       {}", report.high_risk_count.to_string().red().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════".dimmed()
+    );
+    let accounted = report.no_indicators_count + report.suspicious_count + report.high_risk_count;
+    let unresolved_count = report.total_inspected.saturating_sub(accounted);
+
+    if lang.is_turkish() {
+        println!("{}", "BAŞLANGIÇ & GİZLİ TEHDİT ÖZETİ:".bold());
+        println!("  • Toplam Denetlenen:     {}", report.total_inspected);
+        println!(
+            "  • Tehlike Bulgusu Yok:   {}",
+            report.no_indicators_count.to_string().bright_blue()
+        );
+        println!(
+            "  • Şüpheli:               {}",
+            report.suspicious_count.to_string().yellow()
+        );
+        println!(
+            "  • Yüksek Risk:           {}",
+            report.high_risk_count.to_string().red().bold()
+        );
+        if unresolved_count > 0 {
+            println!(
+                "  • Çözümlenemeyen / Boş:  {}",
+                unresolved_count.to_string().dimmed()
+            );
+        }
+    } else {
+        println!("{}", "PERSISTENCE AUDIT SUMMARY:".bold());
+        println!("  • Total Inspected:       {}", report.total_inspected);
+        println!(
+            "  • No Indicators Found:   {}",
+            report.no_indicators_count.to_string().bright_blue()
+        );
+        println!(
+            "  • Suspicious:            {}",
+            report.suspicious_count.to_string().yellow()
+        );
+        println!(
+            "  • High Risk:             {}",
+            report.high_risk_count.to_string().red().bold()
+        );
+        if unresolved_count > 0 {
+            println!(
+                "  • Unresolved / Missing:  {}",
+                unresolved_count.to_string().dimmed()
+            );
+        }
+    }
     println!();
 }
 
-/// Renders a human-readable, high-impact bilingual executive summary card for a single file.
-pub fn print_single_summary_box(report: &ScanReport) {
+/// Renders a human-readable, high-impact executive summary card for a single file.
+pub fn print_single_summary_box(report: &ScanReport, lang: Language) {
     let file_name = report
         .identity
         .path
@@ -587,121 +903,269 @@ pub fn print_single_summary_box(report: &ScanReport) {
         .unwrap_or("target");
 
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!(
-        "   {} {}",
-        "FORENSIC EXECUTIVE SUMMARY".cyan().bold(),
-        format!("// ADLİ TARAMA SONUÇ ÖZETİ").cyan().dimmed()
+        "{}",
+        "═══════════════════════════════════════════════════════════════".cyan()
     );
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("  Target / {}: {}", "Hedef Dosya".dimmed(), file_name.bold());
-
-    match report.verdict {
-        Tier::HighRisk => {
-            println!(
-                "  Verdict / {}: {} {}",
-                "Nihai Durum".dimmed(),
-                "[ALERT] [HIGH RISK]".red().bold(),
-                format!("[TEHLİKELİ DOSYA]").red().dimmed()
-            );
-            println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-            let has_stealer = report.evidence.iter().any(|e| {
-                matches!(
-                    &e.kind,
-                    EvidenceKind::DiscordWebhook { .. }
-                        | EvidenceKind::TelegramToken { .. }
-                        | EvidenceKind::CredentialPath { .. }
-                        | EvidenceKind::YaraMatch { .. }
-                )
-            });
-            if has_stealer {
-                println!("  • CRITICAL: Infostealer, malicious webhook, or data siphon observed!");
-                println!("{}", "    (DİKKAT! Bilgi çalıcı, zararlı webhook veya veri sızdırma mekanizması tespit edildi!)".dimmed());
-                println!("  • ACTION: DO NOT EXECUTE. Delete or quarantine immediately.");
-                println!("{}", "    (TAVSİYE: Dosyayı KESİNLİKLE ÇALIŞTIRMAYINIZ ve sistemden siliniz.)".dimmed());
-            } else {
-                println!("  • CRITICAL: High-risk hostile payload / code injection structure detected!");
-                println!("{}", "    (DİKKAT! Düşmanca süreç enjeksiyonu veya zararlı yükleyici yapısı tespit edildi!)".dimmed());
-                println!("  • ACTION: Execution not recommended unless strictly trusted.");
-                println!("{}", "    (TAVSİYE: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.)".dimmed());
-            }
-        }
-        Tier::Suspicious => {
-            println!(
-                "  Verdict / {}: {} {}",
-                "Nihai Durum".dimmed(),
-                "[NOTICE] [SUSPICIOUS]".yellow().bold(),
-                format!("[DİKKAT GEREKTİRİR]").yellow().dimmed()
-            );
-            println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-            if report.verdict_summary.contains("Untrusted Sideloading Loader")
-                || report.verdict_summary.contains("Local Hook")
-            {
-                println!("  • Untrusted local hook / license emulator (Zero network capabilities).");
-                println!("{}", "    (Yerel lisans kancası veya mod mekanizması - Sıfır dış ağ soketi/API'si).".dimmed());
-                println!("  • ACTION: Safe for offline use; evaluate provenance before executing.");
-                println!("{}", "    (TAVSİYE: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz.)".dimmed());
-            } else {
-                println!("  • Structural anomaly, suspicious network import, or high entropy section.");
-                println!("{}", "    (Dosyada sıra dışı anomali, şüpheli ağ veya yüksek entropi görüldü.)".dimmed());
-                println!("  • ACTION: Exercise caution if origin is untrusted or unknown.");
-                println!("{}", "    (TAVSİYE: Bilinmeyen veya şüpheli bir kaynaktan geldiyse dikkatli olunuz.)".dimmed());
-            }
-        }
-        Tier::NoIndicatorsFound => {
-            println!(
-                "  Verdict / {}: {} {}",
-                "Nihai Durum".dimmed(),
-                "[NO THREAT INDICATORS OBSERVED]".green().bold(),
-                format!("[TEHDİT BELİRTİSİ GÖRÜLMEDİ]").green().dimmed()
-            );
-            println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-            println!("  • No known trojans, infostealers, backdoors, or ransomware traces found.");
-            println!("{}", "    (Dosyada bilinen hiçbir trojan, veri çalıcı veya zararlı yazılım izine rastlanmadı.)".dimmed());
-        }
-        Tier::Inconclusive => {
-            println!(
-                "  Verdict / {}: {} {}",
-                "Nihai Durum".dimmed(),
-                "[NOTICE] [INCONCLUSIVE]".magenta().bold(),
-                format!("[KARARSIZ]").magenta().dimmed()
-            );
-            println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-            println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-            println!("  • Target is not an executable PE binary or format cannot be determined.");
-            println!("{}", "    (Bu dosya doğrudan çalışan bir PE binary değil, örneğin sıkıştırılmış arşiv.)".dimmed());
-            println!("  • ACTION: Extract contents to a folder and scan directory.");
-            println!("{}", "    (TAVSİYE: Arşivi bir klasöre çıkartıp dosyaları veya klasörü buraya sürükleyin.)".dimmed());
-        }
-    }
-
-    let proxy_hooks = report
-        .evidence
-        .iter()
-        .filter(|e| matches!(&e.kind, EvidenceKind::DllProxyHook { .. }))
-        .count();
-    if proxy_hooks > 0 {
+    if lang.is_turkish() {
+        println!("   {}", "MOD, CRACK VE DOSYA ANALİZ ÖZETİ".cyan().bold());
         println!(
-            "  • Sideloading Hook: {} system/platform DLL hook(s) {}",
-            proxy_hooks,
-            format!("({} adet sistem DLL kancası tespit edildi)", proxy_hooks).dimmed()
+            "{}",
+            "═══════════════════════════════════════════════════════════════".cyan()
         );
-    }
+        println!("  Hedef Dosya: {}", file_name.bold());
 
-    println!();
+        match report.verdict {
+            Tier::HighRisk => {
+                println!("  Karar: {}", "[YÜKSEK RİSK]".red().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  DEĞERLENDİRME:");
+                let has_stealer = report.evidence.iter().any(|e| {
+                    matches!(
+                        &e.kind,
+                        EvidenceKind::DiscordWebhook { .. }
+                            | EvidenceKind::TelegramToken { .. }
+                            | EvidenceKind::CredentialPath { .. }
+                            | EvidenceKind::YaraMatch { .. }
+                    )
+                });
+                if has_stealer {
+                    println!("  • KRİTİK: Bilgi çalıcı, zararlı webhook veya veri sızdırma mekanizması tespit edildi!");
+                    println!(
+                        "  • EYLEM: Dosyayı ÇALIŞTIRMAYINIZ; karantinaya alınız veya siliniz."
+                    );
+                } else {
+                    println!("  • KRİTİK: Yüksek riskli süreç enjeksiyonu veya zararlı yükleyici yapısı tespit edildi!");
+                    println!("  • EYLEM: Güvenilmeyen bir kaynaktan geldiyse çalıştırmayınız.");
+                }
+            }
+            Tier::Suspicious => {
+                println!("  Karar: {}", "[ŞÜPHELİ]".yellow().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  DEĞERLENDİRME:");
+                if report
+                    .verdict_summary
+                    .contains("Untrusted Sideloading Loader")
+                    || report.verdict_summary.contains("Local Hook")
+                {
+                    println!("  • Yerel lisans kancası veya mod mekanizması (Sıfır dış ağ soketi/API'si).");
+                    println!(
+                        "  • EYLEM: Yalnızca güvenilir çevrimdışı kullanım için değerlendiriniz."
+                    );
+                } else {
+                    println!(
+                        "  • Yapısal anomali, şüpheli ağ importu veya yüksek entropi görüldü."
+                    );
+                    println!("  • EYLEM: Kaynağı doğrulanmadıkça dikkatli olunuz.");
+                }
+            }
+            Tier::NoIndicatorsFound => {
+                println!("  Karar: {}", "[GÖSTERGE BULUNAMADI]".green().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  DEĞERLENDİRME:");
+                println!("  • Bilinen trojan, veri çalıcı veya zararlı yazılım göstergesine rastlanmadı.");
+            }
+            Tier::Inconclusive => {
+                println!("  Karar: {}", "[KARARSIZ]".magenta().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  DEĞERLENDİRME:");
+                println!("  • Hedef çalıştırılabilir PE binary değil veya biçim çözümlenemedi.");
+                println!("  • EYLEM: Arşiv ise içeriği çıkartıp taranmasını sağlayınız.");
+            }
+        }
+
+        let proxy_hooks = report
+            .evidence
+            .iter()
+            .filter(|e| matches!(&e.kind, EvidenceKind::DllProxyHook { .. }))
+            .count();
+        if proxy_hooks > 0 {
+            println!(
+                "  • Yan Yükleme Kancası: {} adet sistem DLL kancası tespit edildi.",
+                proxy_hooks
+            );
+        }
+
+        if let Some((emu_name, is_legit)) = report.evidence.iter().find_map(|e| {
+            if let EvidenceKind::EmulatorProfile {
+                name,
+                is_legitimate,
+                ..
+            } = &e.kind
+            {
+                Some((name, *is_legitimate))
+            } else {
+                None
+            }
+        }) {
+            if is_legit {
+                println!(
+                    "  • Oyun Platformu Emülatörü: {} {}",
+                    emu_name.cyan().bold(),
+                    "(Doğrulanmış Profil)".cyan().dimmed()
+                );
+            } else {
+                println!(
+                    "  • Oyun Platformu Emülatörü: {} {}",
+                    emu_name.yellow().bold(),
+                    "(Şüpheli / İçi Boş)".yellow().dimmed()
+                );
+            }
+        }
+
+        println!();
+        println!(
+            "  {} Teknik analiz için terminali yukarı kaydırabilirsiniz.",
+            "[BİLGİ]".cyan()
+        );
+    } else {
+        println!(
+            "   {}",
+            "MOD, CRACK & BINARY ANALYSIS SUMMARY".cyan().bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════".cyan()
+        );
+        println!("  Target: {}", file_name.bold());
+
+        match report.verdict {
+            Tier::HighRisk => {
+                println!("  Verdict: {}", "[HIGH RISK]".red().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  ASSESSMENT:");
+                let has_stealer = report.evidence.iter().any(|e| {
+                    matches!(
+                        &e.kind,
+                        EvidenceKind::DiscordWebhook { .. }
+                            | EvidenceKind::TelegramToken { .. }
+                            | EvidenceKind::CredentialPath { .. }
+                            | EvidenceKind::YaraMatch { .. }
+                    )
+                });
+                if has_stealer {
+                    println!(
+                        "  • CRITICAL: Infostealer, malicious webhook, or data siphon observed!"
+                    );
+                    println!("  • ACTION: DO NOT EXECUTE. Delete or quarantine immediately.");
+                } else {
+                    println!("  • CRITICAL: High-risk hostile payload / code injection structure detected!");
+                    println!("  • ACTION: Execution not recommended unless strictly trusted.");
+                }
+            }
+            Tier::Suspicious => {
+                println!("  Verdict: {}", "[SUSPICIOUS]".yellow().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  ASSESSMENT:");
+                if report
+                    .verdict_summary
+                    .contains("Untrusted Sideloading Loader")
+                    || report.verdict_summary.contains("Local Hook")
+                {
+                    println!(
+                        "  • Untrusted local hook / license emulator (Zero network capabilities)."
+                    );
+                    println!(
+                        "  • ACTION: Safe for offline use; evaluate provenance before executing."
+                    );
+                } else {
+                    println!("  • Structural anomaly, suspicious network import, or high entropy section.");
+                    println!("  • ACTION: Exercise caution if origin is untrusted or unknown.");
+                }
+            }
+            Tier::NoIndicatorsFound => {
+                println!("  Verdict: {}", "[NO INDICATORS FOUND]".green().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  ASSESSMENT:");
+                println!(
+                    "  • No known trojans, infostealers, backdoors, or ransomware traces found."
+                );
+            }
+            Tier::Inconclusive => {
+                println!("  Verdict: {}", "[INCONCLUSIVE]".magenta().bold());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".dimmed()
+                );
+                println!("  ASSESSMENT:");
+                println!(
+                    "  • Target is not an executable PE binary or format cannot be determined."
+                );
+                println!("  • ACTION: Extract contents to a folder and scan directory.");
+            }
+        }
+
+        let proxy_hooks = report
+            .evidence
+            .iter()
+            .filter(|e| matches!(&e.kind, EvidenceKind::DllProxyHook { .. }))
+            .count();
+        if proxy_hooks > 0 {
+            println!(
+                "  • Sideloading Hook: {} system/platform DLL hook(s) detected.",
+                proxy_hooks
+            );
+        }
+
+        if let Some((emu_name, is_legit)) = report.evidence.iter().find_map(|e| {
+            if let EvidenceKind::EmulatorProfile {
+                name,
+                is_legitimate,
+                ..
+            } = &e.kind
+            {
+                Some((name, *is_legitimate))
+            } else {
+                None
+            }
+        }) {
+            if is_legit {
+                println!(
+                    "  • Gaming Platform Emulator: {} {}",
+                    emu_name.cyan().bold(),
+                    "(Verified Profile)".cyan().dimmed()
+                );
+            } else {
+                println!(
+                    "  • Gaming Platform Emulator: {} {}",
+                    emu_name.yellow().bold(),
+                    "(Suspicious / Hollow)".yellow().dimmed()
+                );
+            }
+        }
+
+        println!();
+        println!("  {} Scroll up for hashes & PE autopsy.", "[NOTICE]".cyan());
+    }
     println!(
-        "  {} Scroll up for hashes & PE autopsy {}",
-        "[NOTICE]".cyan(),
-        format!("(Teknik analiz için terminali yukarı kaydırabilirsiniz)").dimmed()
+        "{}",
+        "═══════════════════════════════════════════════════════════════".cyan()
     );
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!();
 }
 
-/// Renders a human-readable, high-impact bilingual executive summary card for a directory audit.
+/// Renders a human-readable, high-impact executive summary card for a directory audit.
 #[allow(clippy::too_many_arguments)]
 pub fn print_directory_summary_box(
     dir_path: &std::path::Path,
@@ -713,6 +1177,7 @@ pub fn print_directory_summary_box(
     proxy_hook_count: usize,
     duplicate_count: usize,
     has_stealer_ioc: bool,
+    lang: Language,
 ) {
     let dir_name = dir_path
         .file_name()
@@ -720,118 +1185,174 @@ pub fn print_directory_summary_box(
         .unwrap_or("Target Directory");
 
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!(
-        "  {} {}",
-        "DIRECTORY AUDIT SUMMARY".cyan().bold(),
-        format!("// KLASÖR ADLİ TARAMA GENEL RAPORU").cyan().dimmed()
+        "{}",
+        "═══════════════════════════════════════════════════════════════".cyan()
     );
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-    println!("  Target / {}: {}", "Hedef Klasör".dimmed(), dir_name.bold());
-    if duplicate_count > 0 {
-        let unique = total.saturating_sub(duplicate_count);
+    if lang.is_turkish() {
+        println!("  {}", "KLASÖR MOD & CRACK ANALİZ RAPORU".cyan().bold());
         println!(
-            "  Scanned / {}: {} executables {} ({} unique, {} duplicates)",
-            "Taranan".dimmed(),
-            total,
-            format!("(çalıştırılabilir dosya)").dimmed(),
-            unique,
-            duplicate_count
+            "{}",
+            "═══════════════════════════════════════════════════════════════".cyan()
         );
-    } else {
-        println!(
-            "  Scanned / {}: {} executables (.exe / .dll) {}",
-            "Taranan".dimmed(),
-            total,
-            format!("(çalıştırılabilir dosya)").dimmed()
-        );
-    }
-
-    if proxy_hook_count > 0 {
-        println!(
-            "  Stats / {}: {} No Indicators | {} Suspicious (incl. {} Proxy Hooks) | {} High Risk | {} Inconclusive",
-            "İstatistik".dimmed(),
-            no_indicators, suspicious, proxy_hook_count, high_risk, inconclusive
-        );
-    } else {
-        println!(
-            "  Stats / {}: {} No Indicators | {} Suspicious | {} High Risk | {} Inconclusive",
-            "İstatistik".dimmed(),
-            no_indicators, suspicious, high_risk, inconclusive
-        );
-    }
-    println!("{}", "───────────────────────────────────────────────────────────────".dimmed());
-
-    if high_risk > 0 {
-        println!(
-            "  Final Verdict / {}: {} {}",
-            "Karar".dimmed(),
-            "[ALERT] [HIGH RISK]".red().bold(),
-            format!("[TEHLİKELİ DOSYA BULUNDU]").red().dimmed()
-        );
-        println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-        println!(
-            "  • ALERT: {} dangerous file(s) identified in folder! {}",
-            high_risk,
-            format!("({} adet tehlikeli dosya tespit edildi!)", high_risk).dimmed()
-        );
-        if has_stealer_ioc {
-            println!("  • Infostealer or malicious exfiltration channel detected. DO NOT EXECUTE!");
-            println!("{}", "    (Bilgi çalıcı veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!)".dimmed());
-        } else {
-            println!("  • Hostile process injection or malicious loader structure detected. DO NOT EXECUTE!");
-            println!("{}", "    (Düşmanca süreç enjeksiyonu veya zararlı kod yapısı tespit edildi. ÇALIŞTIRMAYINIZ!)".dimmed());
-        }
-    } else if suspicious > 0 {
-        println!(
-            "  Final Verdict / {}: {} {}",
-            "Karar".dimmed(),
-            "[NOTICE] [SUSPICIOUS]".yellow().bold(),
-            format!("[İNCELEME GEREKTİRİR]").yellow().dimmed()
-        );
-        println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-        println!(
-            "  • {} anomalous file(s) observed. {}",
-            suspicious,
-            format!("({} adet şüpheli anomali tespit edildi.)", suspicious).dimmed()
-        );
-        println!(
-            "  • Exercise caution if downloaded from an untrusted source. {}",
-            format!("(Şüpheli bir kaynaktan indirildiyse dikkat ediniz.)").dimmed()
-        );
-    } else {
-        println!(
-            "  Final Verdict / {}: {} {}",
-            "Karar".dimmed(),
-            "[NO THREAT INDICATORS OBSERVED]".green().bold(),
-            format!("[TEHDİT BELİRTİSİ GÖRÜLMEDİ]").green().dimmed()
-        );
-        println!("  ASSESSMENT / {}:", "DEĞERLENDİRME".dimmed());
-        println!("  • No infostealers, trojans, or malware traces found in {} scanned file(s).", total);
-        println!("{}", format!("    (Taranan {} dosyanın hiçbirinde şifre/veri çalıcı, trojan veya zararlı yazılım izine rastlanmadı.)", total).dimmed());
-    }
-
-    if proxy_hook_count > 0 {
-        println!(
-            "  • Sideloading: {} platform/system DLL hook(s) detected. {}",
-            proxy_hook_count,
-            format!("({} adet sistem DLL kancası tespit edildi)", proxy_hook_count).dimmed()
-        );
-        if high_risk == 0 {
+        println!("  Hedef Klasör: {}", dir_name.bold());
+        if duplicate_count > 0 {
+            let unique = total.saturating_sub(duplicate_count);
             println!(
-                "    Zero outbound network: likely local license hook or emulator. {}",
-                format!("(Dış ağ yok: muhtemelen yerel lisans kancası veya mod emülatörü.)").dimmed()
+                "  Taranan: {} çalıştırılabilir dosya ({} benzersiz, {} kopya)",
+                total, unique, duplicate_count
+            );
+        } else {
+            println!("  Taranan: {} çalıştırılabilir dosya (.exe / .dll)", total);
+        }
+
+        if proxy_hook_count > 0 {
+            println!(
+                "  İstatistik: {} Gösterge Bulunamadı | {} Şüpheli ({} Proxy Kanca) | {} Yüksek Risk | {} Kararsız",
+                no_indicators, suspicious, proxy_hook_count, high_risk, inconclusive
+            );
+        } else {
+            println!(
+                "  İstatistik: {} Gösterge Bulunamadı | {} Şüpheli | {} Yüksek Risk | {} Kararsız",
+                no_indicators, suspicious, high_risk, inconclusive
             );
         }
-    }
+        println!(
+            "{}",
+            "───────────────────────────────────────────────────────────────".dimmed()
+        );
 
-    println!();
+        if high_risk > 0 {
+            println!("  Nihai Durum: {}", "[YÜKSEK RİSK]".red().bold());
+            println!("  DEĞERLENDİRME:");
+            println!(
+                "  • UYARI: Klasörde {} adet yüksek riskli dosya tespit edildi!",
+                high_risk
+            );
+            if has_stealer_ioc {
+                println!("  • Bilgi çalıcı veya zararlı veri sızdırma mekanizması tespit edildi. ÇALIŞTIRMAYINIZ!");
+            } else {
+                println!("  • Düşmanca süreç enjeksiyonu veya zararlı yükleyici yapısı tespit edildi. ÇALIŞTIRMAYINIZ!");
+            }
+        } else if suspicious > 0 {
+            println!("  Nihai Durum: {}", "[ŞÜPHELİ]".yellow().bold());
+            println!("  DEĞERLENDİRME:");
+            println!(
+                "  • Klasörde {} adet şüpheli dosya/anomali gözlemlendi.",
+                suspicious
+            );
+            println!("  • Güvenilmeyen bir kaynaktan indirildiyse dikkatli olunuz.");
+        } else {
+            println!("  Nihai Durum: {}", "[GÖSTERGE BULUNAMADI]".green().bold());
+            println!("  DEĞERLENDİRME:");
+            println!(
+                "  • Taranan {} dosyanın hiçbirinde trojan veya zararlı yazılım göstergesine rastlanmadı.",
+                total
+            );
+        }
+
+        if proxy_hook_count > 0 {
+            println!(
+                "  • Yan Yükleme: {} adet platform/sistem DLL kancası tespit edildi.",
+                proxy_hook_count
+            );
+            if high_risk == 0 {
+                println!("    Sıfır dış ağ: muhtemelen yerel lisans kancası veya mod emülatörü.");
+            }
+        }
+
+        println!();
+        println!(
+            "  {} Dosyaları incelemek için aşağıdaki menüyü kullanın.",
+            "[BİLGİ]".cyan()
+        );
+    } else {
+        println!(
+            "  {}",
+            "DIRECTORY MOD & CRACK ANALYSIS SUMMARY".cyan().bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════".cyan()
+        );
+        println!("  Target: {}", dir_name.bold());
+        if duplicate_count > 0 {
+            let unique = total.saturating_sub(duplicate_count);
+            println!(
+                "  Scanned: {} executables ({} unique, {} duplicates)",
+                total, unique, duplicate_count
+            );
+        } else {
+            println!("  Scanned: {} executables (.exe / .dll)", total);
+        }
+
+        if proxy_hook_count > 0 {
+            println!(
+                "  Stats: {} No Indicators | {} Suspicious (incl. {} Proxy Hooks) | {} High Risk | {} Inconclusive",
+                no_indicators, suspicious, proxy_hook_count, high_risk, inconclusive
+            );
+        } else {
+            println!(
+                "  Stats: {} No Indicators | {} Suspicious | {} High Risk | {} Inconclusive",
+                no_indicators, suspicious, high_risk, inconclusive
+            );
+        }
+        println!(
+            "{}",
+            "───────────────────────────────────────────────────────────────".dimmed()
+        );
+
+        if high_risk > 0 {
+            println!("  Final Verdict: {}", "[HIGH RISK]".red().bold());
+            println!("  ASSESSMENT:");
+            println!(
+                "  • ALERT: {} dangerous file(s) identified in folder!",
+                high_risk
+            );
+            if has_stealer_ioc {
+                println!(
+                    "  • Infostealer or malicious exfiltration channel detected. DO NOT EXECUTE!"
+                );
+            } else {
+                println!("  • Hostile process injection or malicious loader structure detected. DO NOT EXECUTE!");
+            }
+        } else if suspicious > 0 {
+            println!("  Final Verdict: {}", "[SUSPICIOUS]".yellow().bold());
+            println!("  ASSESSMENT:");
+            println!("  • {} anomalous file(s) observed.", suspicious);
+            println!("  • Exercise caution if downloaded from an untrusted source.");
+        } else {
+            println!(
+                "  Final Verdict: {}",
+                "[NO INDICATORS FOUND]".green().bold()
+            );
+            println!("  ASSESSMENT:");
+            println!(
+                "  • No infostealers, trojans, or malware traces found in {} scanned file(s).",
+                total
+            );
+        }
+
+        if proxy_hook_count > 0 {
+            println!(
+                "  • Sideloading: {} platform/system DLL hook(s) detected.",
+                proxy_hook_count
+            );
+            if high_risk == 0 {
+                println!("    Zero outbound network: likely local license hook or emulator.");
+            }
+        }
+
+        println!();
+        println!(
+            "  {} Use Navigation menu below to inspect files.",
+            "[NOTICE]".cyan()
+        );
+    }
     println!(
-        "  {} Use Navigation menu below to inspect files {}",
-        "[NOTICE]".cyan(),
-        format!("(Dosyaları incelemek için aşağıdaki menüyü kullanın)").dimmed()
+        "{}",
+        "═══════════════════════════════════════════════════════════════".cyan()
     );
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
     println!();
 }
 
@@ -848,6 +1369,7 @@ pub fn print_directory_summary(
     proxy_hook_count: usize,
     duplicate_count: usize,
     has_stealer_ioc: bool,
+    lang: Language,
 ) {
     print_directory_summary_box(
         dir_path,
@@ -859,6 +1381,7 @@ pub fn print_directory_summary(
         proxy_hook_count,
         duplicate_count,
         has_stealer_ioc,
+        lang,
     );
 }
 
@@ -926,8 +1449,9 @@ mod tests {
             skip_reasons: vec![],
         };
 
-        // Smoke tests ensuring no panic and proper formatting
-        print_single_summary_box(&report);
+        // Smoke tests ensuring no panic and proper formatting in both languages
+        print_single_summary_box(&report, Language::English);
+        print_single_summary_box(&report, Language::Turkish);
         print_directory_summary_box(
             &PathBuf::from("C:\\test\\dir"),
             10,
@@ -938,6 +1462,19 @@ mod tests {
             2,
             0,
             false,
+            Language::English,
+        );
+        print_directory_summary_box(
+            &PathBuf::from("C:\\test\\dir"),
+            10,
+            8,
+            1,
+            1,
+            0,
+            2,
+            0,
+            false,
+            Language::Turkish,
         );
 
         // High risk with stealer
@@ -963,7 +1500,8 @@ mod tests {
             files_skipped: 0,
             skip_reasons: vec![],
         };
-        print_single_summary_box(&stealer_report);
+        print_single_summary_box(&stealer_report, Language::English);
+        print_single_summary_box(&stealer_report, Language::Turkish);
         print_directory_summary_box(
             &PathBuf::from("C:\\test\\dir"),
             10,
@@ -974,6 +1512,7 @@ mod tests {
             0,
             0,
             true,
+            Language::English,
         );
 
         // High risk without stealer (e.g. process injection)
@@ -999,7 +1538,7 @@ mod tests {
             files_skipped: 0,
             skip_reasons: vec![],
         };
-        print_single_summary_box(&injection_report);
+        print_single_summary_box(&injection_report, Language::Turkish);
         print_directory_summary_box(
             &PathBuf::from("C:\\test\\dir"),
             10,
@@ -1010,10 +1549,42 @@ mod tests {
             0,
             0,
             false,
+            Language::Turkish,
         );
+
+        let hunt_report = oil_core::hunt::HuntReport {
+            items: vec![],
+            total_inspected: 21,
+            high_risk_count: 1,
+            suspicious_count: 0,
+            no_indicators_count: 14,
+        };
+        print_hunt_dossier(&hunt_report, Language::English);
+        print_hunt_dossier(&hunt_report, Language::Turkish);
+
+        let diff_report = DiffReport {
+            original: FileIdentity {
+                path: PathBuf::from("orig.exe"),
+                size_bytes: 1024,
+                sha256: "0".repeat(64),
+                blake3: "0".repeat(64),
+            },
+            patched: FileIdentity {
+                path: PathBuf::from("patched.exe"),
+                size_bytes: 1024,
+                sha256: "1".repeat(64),
+                blake3: "1".repeat(64),
+            },
+            new_sections: vec![],
+            entry_point_changed: false,
+            new_imports: vec![],
+            overlay_delta: 0,
+            patches: vec![],
+            delta_fingerprint: "0".repeat(64),
+            verdict: Tier::NoIndicatorsFound,
+            verdict_summary: "Identical".into(),
+        };
+        print_diff_dossier(&diff_report, Language::English);
+        print_diff_dossier(&diff_report, Language::Turkish);
     }
 }
-
-
-
-

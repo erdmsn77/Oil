@@ -24,10 +24,7 @@ pub enum IoError {
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
     #[error("I/O error reading {path}: {source}")]
-    ReadError {
-        path: String,
-        source: io::Error,
-    },
+    ReadError { path: String, source: io::Error },
     #[error("File is empty: {0}")]
     EmptyFile(String),
 }
@@ -65,9 +62,7 @@ impl FileData {
 pub fn read_file(path: &Path) -> Result<FileData, IoError> {
     let metadata = fs::metadata(path).map_err(|e| match e.kind() {
         io::ErrorKind::NotFound => IoError::NotFound(path.display().to_string()),
-        io::ErrorKind::PermissionDenied => {
-            IoError::PermissionDenied(path.display().to_string())
-        }
+        io::ErrorKind::PermissionDenied => IoError::PermissionDenied(path.display().to_string()),
         _ => IoError::ReadError {
             path: path.display().to_string(),
             source: e,
@@ -206,7 +201,10 @@ mod tests {
             }
         }
         let e = shannon_entropy(&data);
-        assert!(e > 7.99, "Entropy of uniform distribution should be ~8.0, got {e}");
+        assert!(
+            e > 7.99,
+            "Entropy of uniform distribution should be ~8.0, got {e}"
+        );
     }
 
     #[test]

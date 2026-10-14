@@ -5,9 +5,7 @@
 //! using `iced-x86` and comparing macro PE structures.
 
 use crate::io::{identify_file, IoError};
-use crate::models::{
-    DiffReport, ImportEntry, PatchCategory, PatchRegion, Tier,
-};
+use crate::models::{DiffReport, ImportEntry, PatchCategory, PatchRegion, Tier};
 use crate::pe::analyze_pe;
 use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind};
 use sha2::{Digest, Sha256};
@@ -92,15 +90,19 @@ pub fn diff_binaries(original_path: &Path, patched_path: &Path) -> Result<DiffRe
     // ──────────────────────────────────────────────
     let mut delta_hasher = Sha256::new();
     for p in &patches {
-        delta_hasher.update(&p.offset.to_le_bytes());
-        delta_hasher.update(&p.size.to_le_bytes());
+        delta_hasher.update(p.offset.to_le_bytes());
+        delta_hasher.update(p.size.to_le_bytes());
 
         let o_start = (p.offset as usize).min(orig_bytes.len());
-        let o_end = (p.offset as usize).saturating_add(p.size as usize).min(orig_bytes.len());
+        let o_end = (p.offset as usize)
+            .saturating_add(p.size as usize)
+            .min(orig_bytes.len());
         delta_hasher.update(&orig_bytes[o_start..o_end]);
 
         let p_start = (p.offset as usize).min(patch_bytes.len());
-        let p_end = (p.offset as usize).saturating_add(p.size as usize).min(patch_bytes.len());
+        let p_end = (p.offset as usize)
+            .saturating_add(p.size as usize)
+            .min(patch_bytes.len());
         delta_hasher.update(&patch_bytes[p_start..p_end]);
     }
     let delta_fingerprint = format!("{:x}", delta_hasher.finalize());
@@ -124,9 +126,9 @@ pub fn diff_binaries(original_path: &Path, patched_path: &Path) -> Result<DiffRe
 
     // Check for high risk conditions:
     // New section added + networking/injection APIs, or entry point moved to new section
-    let has_suspicious_new_imports = new_imports.iter().any(|i| {
-        ["ws2_32.dll", "wininet.dll", "urlmon.dll"].contains(&i.dll_name.as_str())
-    });
+    let has_suspicious_new_imports = new_imports
+        .iter()
+        .any(|i| ["ws2_32.dll", "wininet.dll", "urlmon.dll"].contains(&i.dll_name.as_str()));
 
     let (verdict, verdict_summary) = if has_code_injection
         || (!new_sections.is_empty() && has_suspicious_new_imports)
@@ -136,7 +138,11 @@ pub fn diff_binaries(original_path: &Path, patched_path: &Path) -> Result<DiffRe
             Tier::HighRisk,
             "Code injection or structural hijack detected: Entry point redirection, new executable sections, or foreign network imports.".to_string(),
         )
-    } else if !new_sections.is_empty() || overlay_delta > 1024 || has_suspicious_new_imports || has_unknown_patch {
+    } else if !new_sections.is_empty()
+        || overlay_delta > 1024
+        || has_suspicious_new_imports
+        || has_unknown_patch
+    {
         (
             Tier::Suspicious,
             if has_unknown_patch && has_drm_bypass {
@@ -205,23 +211,35 @@ fn extract_and_classify_patches(
             let patch_slice = &patched[start..patch_end];
 
             let (section_name, section_bounds, rva) = if let Some(pe) = orig_pe {
-                pe.sections.iter().find(|s| {
-                    let raw_start = s.pointer_to_raw_data;
-                    let raw_end = raw_start.saturating_add(s.raw_size);
-                    (start as u64) >= raw_start && (start as u64) < raw_end
-                }).map(|s| {
-                    let offset_in_sec = (start as u64).saturating_sub(s.pointer_to_raw_data);
-                    let rva = s.virtual_address.saturating_add(offset_in_sec);
-                    let bounds = (s.virtual_address, s.virtual_address.saturating_add(s.virtual_size));
-                    (s.name.clone(), Some(bounds), rva)
-                }).unwrap_or_else(|| {
-                    let first_sec_start = pe.sections.iter().map(|s| s.pointer_to_raw_data).min().unwrap_or(0x200);
-                    if (start as u64) < first_sec_start {
-                        ("[PE_HEADER]".to_string(), None, start as u64)
-                    } else {
-                        (".unknown".to_string(), None, start as u64)
-                    }
-                })
+                pe.sections
+                    .iter()
+                    .find(|s| {
+                        let raw_start = s.pointer_to_raw_data;
+                        let raw_end = raw_start.saturating_add(s.raw_size);
+                        (start as u64) >= raw_start && (start as u64) < raw_end
+                    })
+                    .map(|s| {
+                        let offset_in_sec = (start as u64).saturating_sub(s.pointer_to_raw_data);
+                        let rva = s.virtual_address.saturating_add(offset_in_sec);
+                        let bounds = (
+                            s.virtual_address,
+                            s.virtual_address.saturating_add(s.virtual_size),
+                        );
+                        (s.name.clone(), Some(bounds), rva)
+                    })
+                    .unwrap_or_else(|| {
+                        let first_sec_start = pe
+                            .sections
+                            .iter()
+                            .map(|s| s.pointer_to_raw_data)
+                            .min()
+                            .unwrap_or(0x200);
+                        if (start as u64) < first_sec_start {
+                            ("[PE_HEADER]".to_string(), None, start as u64)
+                        } else {
+                            (".unknown".to_string(), None, start as u64)
+                        }
+                    })
             } else {
                 (".text".to_string(), None, start as u64)
             };
@@ -240,16 +258,32 @@ fn extract_and_classify_patches(
                 };
                 (Some(desc), cat)
             } else {
-                classify_patch_bytes(orig, patched, start, patch_end, rva, is_64bit, section_bounds)
+                classify_patch_bytes(
+                    orig,
+                    patched,
+                    start,
+                    patch_end,
+                    rva,
+                    is_64bit,
+                    section_bounds,
+                )
             };
 
             let encoded_orig = if orig_slice.len() > 64 {
-                format!("{} ... ({} bytes total)", hex_encode(&orig_slice[..64]), size)
+                format!(
+                    "{} ... ({} bytes total)",
+                    hex_encode(&orig_slice[..64]),
+                    size
+                )
             } else {
                 hex_encode(orig_slice)
             };
             let encoded_patch = if patch_slice.len() > 64 {
-                format!("{} ... ({} bytes total)", hex_encode(&patch_slice[..64]), size)
+                format!(
+                    "{} ... ({} bytes total)",
+                    hex_encode(&patch_slice[..64]),
+                    size
+                )
             } else {
                 hex_encode(patch_slice)
             };
@@ -289,7 +323,11 @@ fn extract_and_classify_patches(
                     let pre_size = pre_slice.len() as u64;
                     let pre_entropy = crate::io::shannon_entropy(pre_slice);
                     let encoded_pre = if pre_slice.len() > 64 {
-                        format!("{} ... ({} bytes total)", hex_encode(&pre_slice[..64]), pre_size)
+                        format!(
+                            "{} ... ({} bytes total)",
+                            hex_encode(&pre_slice[..64]),
+                            pre_size
+                        )
                     } else {
                         hex_encode(pre_slice)
                     };
@@ -317,7 +355,11 @@ fn extract_and_classify_patches(
                 let cert_slice_size = cert_slice.len() as u64;
                 let cert_entropy = crate::io::shannon_entropy(cert_slice);
                 let encoded_cert = if cert_slice.len() > 64 {
-                    format!("{} ... ({} bytes total)", hex_encode(&cert_slice[..64]), cert_slice_size)
+                    format!(
+                        "{} ... ({} bytes total)",
+                        hex_encode(&cert_slice[..64]),
+                        cert_slice_size
+                    )
                 } else {
                     hex_encode(cert_slice)
                 };
@@ -340,7 +382,11 @@ fn extract_and_classify_patches(
                     let post_size = post_slice.len() as u64;
                     let post_entropy = crate::io::shannon_entropy(post_slice);
                     let encoded_post = if post_slice.len() > 64 {
-                        format!("{} ... ({} bytes total)", hex_encode(&post_slice[..64]), post_size)
+                        format!(
+                            "{} ... ({} bytes total)",
+                            hex_encode(&post_slice[..64]),
+                            post_size
+                        )
                     } else {
                         hex_encode(post_slice)
                     };
@@ -360,7 +406,11 @@ fn extract_and_classify_patches(
             } else {
                 let entropy = crate::io::shannon_entropy(patch_slice);
                 let encoded_patch = if patch_slice.len() > 64 {
-                    format!("{} ... ({} bytes total)", hex_encode(&patch_slice[..64]), total_size)
+                    format!(
+                        "{} ... ({} bytes total)",
+                        hex_encode(&patch_slice[..64]),
+                        total_size
+                    )
                 } else {
                     hex_encode(patch_slice)
                 };
@@ -380,7 +430,11 @@ fn extract_and_classify_patches(
         } else {
             let entropy = crate::io::shannon_entropy(patch_slice);
             let encoded_patch = if patch_slice.len() > 64 {
-                format!("{} ... ({} bytes total)", hex_encode(&patch_slice[..64]), total_size)
+                format!(
+                    "{} ... ({} bytes total)",
+                    hex_encode(&patch_slice[..64]),
+                    total_size
+                )
             } else {
                 hex_encode(patch_slice)
             };
@@ -414,13 +468,23 @@ fn extract_and_classify_patches(
         };
 
         let disasm = if is_orig_cert {
-            format!("Original Authenticode digital signature stripped ({} bytes)", size)
+            format!(
+                "Original Authenticode digital signature stripped ({} bytes)",
+                size
+            )
         } else {
-            format!("Truncated tail data past patched EOF ({} bytes removed)", size)
+            format!(
+                "Truncated tail data past patched EOF ({} bytes removed)",
+                size
+            )
         };
 
         let encoded_orig = if orig_slice.len() > 64 {
-            format!("{} ... ({} bytes total)", hex_encode(&orig_slice[..64]), size)
+            format!(
+                "{} ... ({} bytes total)",
+                hex_encode(&orig_slice[..64]),
+                size
+            )
         } else {
             hex_encode(orig_slice)
         };
@@ -497,12 +561,19 @@ fn classify_patch_bytes(
                 if target < sec_start || target >= sec_end {
                     let disasm = format!(
                         "Branch outside code section bounds [0x{:X}..0x{:X}]: {:?} to 0x{:X}",
-                        sec_start, sec_end, patch_first.mnemonic(), target
+                        sec_start,
+                        sec_end,
+                        patch_first.mnemonic(),
+                        target
                     );
                     return (Some(disasm), PatchCategory::CodeInjection);
                 }
             } else if target.abs_diff(rip) > 0x100000 {
-                let disasm = format!("Distant branch outside code bounds: {:?} 0x{:X}", patch_first.mnemonic(), target);
+                let disasm = format!(
+                    "Distant branch outside code bounds: {:?} 0x{:X}",
+                    patch_first.mnemonic(),
+                    target
+                );
                 return (Some(disasm), PatchCategory::CodeInjection);
             }
         }
@@ -510,12 +581,17 @@ fn classify_patch_bytes(
 
     // 3. 16-byte limit check: Non-NOP patches exceeding 16 bytes cannot be assumed benign DRM bypasses
     if patch_bytes.len() > 16 {
-        let disasm = format!("Large patch region ({} bytes altered, exceeds 16-byte DRM template limit)", patch_bytes.len());
+        let disasm = format!(
+            "Large patch region ({} bytes altered, exceeds 16-byte DRM template limit)",
+            patch_bytes.len()
+        );
         return (Some(disasm), PatchCategory::Unknown);
     }
 
     // 4. Check for local conditional jump modification (JZ -> JNZ, JZ -> JMP within section)
-    if let (Some(orig_first), Some(patch_first)) = (orig_instructions.first(), patch_instructions.first()) {
+    if let (Some(orig_first), Some(patch_first)) =
+        (orig_instructions.first(), patch_instructions.first())
+    {
         let orig_is_jcc = orig_first.is_jcc_short_or_near();
         let patch_is_jcc = patch_first.is_jcc_short_or_near();
         let patch_is_jmp = patch_first.mnemonic() == Mnemonic::Jmp
@@ -531,11 +607,7 @@ fn classify_patch_bytes(
             };
 
             if is_valid_drm_target {
-                let disasm = format!(
-                    "{:?} → {:?}",
-                    orig_first.mnemonic(),
-                    patch_first.mnemonic()
-                );
+                let disasm = format!("{:?} → {:?}", orig_first.mnemonic(), patch_first.mnemonic());
                 return (Some(disasm), PatchCategory::DrmBypass);
             } else {
                 let disasm = format!(
@@ -551,7 +623,8 @@ fn classify_patch_bytes(
         let is_ret_override = if patch_instructions.len() >= 2 {
             let first = &patch_instructions[0];
             let second = &patch_instructions[1];
-            let is_xor_self = first.mnemonic() == Mnemonic::Xor && first.op0_register() == first.op1_register();
+            let is_xor_self =
+                first.mnemonic() == Mnemonic::Xor && first.op0_register() == first.op1_register();
             let is_mov_const = first.mnemonic() == Mnemonic::Mov;
             (is_xor_self || is_mov_const) && second.mnemonic() == Mnemonic::Ret
         } else if patch_instructions.len() == 1 {
@@ -568,13 +641,18 @@ fn classify_patch_bytes(
 
     // 6. Check single instruction immediate value alteration (e.g. license check CMP/TEST/MOV operand 0 -> 1)
     if patch_bytes.len() <= 4 {
-        if let (Some(orig_first), Some(patch_first)) = (orig_instructions.first(), patch_instructions.first()) {
-            let has_imm = is_immediate_op(patch_first.op0_kind())
-                || is_immediate_op(patch_first.op1_kind());
+        if let (Some(orig_first), Some(patch_first)) =
+            (orig_instructions.first(), patch_instructions.first())
+        {
+            let has_imm =
+                is_immediate_op(patch_first.op0_kind()) || is_immediate_op(patch_first.op1_kind());
 
             if orig_first.mnemonic() == patch_first.mnemonic()
                 && has_imm
-                && matches!(patch_first.mnemonic(), Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Mov)
+                && matches!(
+                    patch_first.mnemonic(),
+                    Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Mov
+                )
             {
                 let disasm = format!(
                     "Immediate operand alteration: {:?} ({} bytes)",
@@ -594,8 +672,10 @@ fn classify_patch_bytes(
                 let back_orig_ctx = &orig[back_start..orig.len().min(back_start + 16)];
                 let back_patch_ctx = &patched[back_start..patched.len().min(back_start + 16)];
 
-                let mut b_orig_dec = Decoder::with_ip(bitness, back_orig_ctx, back_rva, DecoderOptions::NONE);
-                let mut b_patch_dec = Decoder::with_ip(bitness, back_patch_ctx, back_rva, DecoderOptions::NONE);
+                let mut b_orig_dec =
+                    Decoder::with_ip(bitness, back_orig_ctx, back_rva, DecoderOptions::NONE);
+                let mut b_patch_dec =
+                    Decoder::with_ip(bitness, back_patch_ctx, back_rva, DecoderOptions::NONE);
 
                 let mut b_orig_instr = Instruction::default();
                 let mut b_patch_instr = Instruction::default();
@@ -613,7 +693,10 @@ fn classify_patch_bytes(
                         && b_orig_instr.len() == b_patch_instr.len()
                         && b_orig_instr.mnemonic() == b_patch_instr.mnemonic()
                         && has_imm
-                        && matches!(b_patch_instr.mnemonic(), Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Mov)
+                        && matches!(
+                            b_patch_instr.mnemonic(),
+                            Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Mov
+                        )
                     {
                         let disasm = format!(
                             "Immediate operand alteration in {:?} (offset -{} from opcode)",
@@ -626,7 +709,10 @@ fn classify_patch_bytes(
             }
         }
 
-        let disasm = format!("Unverified short modification ({} bytes altered)", patch_bytes.len());
+        let disasm = format!(
+            "Unverified short modification ({} bytes altered)",
+            patch_bytes.len()
+        );
         return (Some(disasm), PatchCategory::Unknown);
     }
 
@@ -634,7 +720,11 @@ fn classify_patch_bytes(
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ")
+    bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn is_immediate_op(kind: OpKind) -> bool {
@@ -663,7 +753,8 @@ mod tests {
         // Patched: NOP NOP NOP NOP NOP (90 90 90 90 90)
         let patch = b"\x90\x90\x90\x90\x90";
 
-        let (disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, None);
+        let (disasm, category) =
+            classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, None);
         assert_eq!(category, PatchCategory::DrmBypass);
         assert!(disasm.unwrap().contains("NOP"));
     }
@@ -675,7 +766,8 @@ mod tests {
         // Patched: JMP +10 (EB 0A)
         let patch = b"\xEB\x0A";
 
-        let (disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, None);
+        let (disasm, category) =
+            classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, None);
         assert_eq!(category, PatchCategory::DrmBypass);
         let text = disasm.unwrap();
         assert!(text.contains("Jmp") && (text.contains("Je") || text.contains("Jz")));
@@ -688,7 +780,8 @@ mod tests {
         // JMP 0x05001005 (far away)
         let patch = b"\xE9\x00\x00\x50\x04";
 
-        let (_disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, None);
+        let (_disasm, category) =
+            classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, None);
         assert_eq!(category, PatchCategory::CodeInjection);
     }
 
@@ -698,7 +791,15 @@ mod tests {
         // Relative jump to 0x3005 which is outside [0x1000..0x2000]
         let patch = b"\xE9\x00\x20\x00\x00";
 
-        let (_disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
+        let (_disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
         assert_eq!(category, PatchCategory::CodeInjection);
     }
 
@@ -707,7 +808,15 @@ mod tests {
         let orig = &[0xAA; 24];
         let patch = &[0xBB; 24];
 
-        let (_disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
+        let (_disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
         assert_eq!(category, PatchCategory::Unknown);
     }
 
@@ -717,7 +826,15 @@ mod tests {
         let orig = b"\x83\xF8\x00\x74\x05";
         let patch = b"\x31\xC0\xC3";
 
-        let (disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
+        let (disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
         assert_eq!(category, PatchCategory::DrmBypass);
         assert!(disasm.unwrap().contains("Forced return success"));
     }
@@ -729,8 +846,20 @@ mod tests {
         // Patched: Far JMP outside section bounds (E9 00 00 50 04)
         let patch = b"\xE9\x00\x00\x50\x04";
 
-        let (_disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
-        assert_eq!(category, PatchCategory::CodeInjection, "Distant jump must not be classified as DRM bypass even if original was JCC");
+        let (_disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
+        assert_eq!(
+            category,
+            PatchCategory::CodeInjection,
+            "Distant jump must not be classified as DRM bypass even if original was JCC"
+        );
     }
 
     #[test]
@@ -739,14 +868,26 @@ mod tests {
         // Patched: INT 3 breakpoint traps or arbitrary bytes
         let patch = b"\xCC\xCC\xCC\xCC";
 
-        let (_disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
-        assert_eq!(category, PatchCategory::Unknown, "Arbitrary 4-byte alterations must not be blindly treated as DRM bypass");
+        let (_disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
+        assert_eq!(
+            category,
+            PatchCategory::Unknown,
+            "Arbitrary 4-byte alterations must not be blindly treated as DRM bypass"
+        );
     }
 
     #[test]
     fn test_unknown_patch_not_whitewashed_by_drm_bypass() {
-        use tempfile::NamedTempFile;
         use std::io::Write;
+        use tempfile::NamedTempFile;
 
         // Construct two binaries: both have a valid DRM bypass (74 0A -> EB 0A) AND an unknown large patch (24 bytes)
         let mut orig_bytes = vec![0x90; 256];
@@ -777,8 +918,8 @@ mod tests {
 
     #[test]
     fn test_appended_tail_payload_detected_as_suspicious() {
-        use tempfile::NamedTempFile;
         use std::io::Write;
+        use tempfile::NamedTempFile;
 
         let orig_bytes = vec![0x90; 128];
         let mut patch_bytes = vec![0x90; 128];
@@ -794,9 +935,19 @@ mod tests {
         patch_file.write_all(&patch_bytes).unwrap();
 
         let report = diff_binaries(orig_file.path(), patch_file.path()).unwrap();
-        assert_eq!(report.verdict, Tier::Suspicious, "Appended tail bytes must yield Suspicious tier, avoiding false positive HighRisk");
-        let tail_patch = report.patches.iter().find(|p| p.section == "[EOF_APPENDED]");
-        assert!(tail_patch.is_some(), "Must detect appended tail patch region");
+        assert_eq!(
+            report.verdict,
+            Tier::Suspicious,
+            "Appended tail bytes must yield Suspicious tier, avoiding false positive HighRisk"
+        );
+        let tail_patch = report
+            .patches
+            .iter()
+            .find(|p| p.section == "[EOF_APPENDED]");
+        assert!(
+            tail_patch.is_some(),
+            "Must detect appended tail patch region"
+        );
         assert_eq!(tail_patch.unwrap().category, PatchCategory::Unknown);
     }
 
@@ -807,8 +958,20 @@ mod tests {
         // Patched: JMP RAX (FF E0) - indirect control flow hijack
         let patch = b"\xFF\xE0";
 
-        let (disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
-        assert_eq!(category, PatchCategory::CodeInjection, "Indirect jumps must be classified as CodeInjection");
+        let (disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
+        assert_eq!(
+            category,
+            PatchCategory::CodeInjection,
+            "Indirect jumps must be classified as CodeInjection"
+        );
         assert!(disasm.unwrap().contains("Indirect control flow hijack"));
     }
 
@@ -819,8 +982,20 @@ mod tests {
         // Patched: JMP +0x500 within same section (E9 FB 04 00 00) - jumps to 0x1500 (code cave)
         let patch = b"\xE9\xFB\x04\x00\x00";
 
-        let (disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
-        assert_eq!(category, PatchCategory::CodeInjection, "Intrasection redirect to code cave must be classified as CodeInjection");
+        let (disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
+        assert_eq!(
+            category,
+            PatchCategory::CodeInjection,
+            "Intrasection redirect to code cave must be classified as CodeInjection"
+        );
         assert!(disasm.unwrap().contains("Intrasection hook"));
     }
 
@@ -831,14 +1006,26 @@ mod tests {
         // Patched: MOV EAX, EDX (89 D0) - register alteration without immediate operand
         let patch = b"\x89\xD0";
 
-        let (_disasm, category) = classify_patch_bytes(orig, patch, 0, patch.len(), 0x1000, true, Some((0x1000, 0x2000)));
-        assert_eq!(category, PatchCategory::Unknown, "Register-altering MOV must not be classified as DRM bypass");
+        let (_disasm, category) = classify_patch_bytes(
+            orig,
+            patch,
+            0,
+            patch.len(),
+            0x1000,
+            true,
+            Some((0x1000, 0x2000)),
+        );
+        assert_eq!(
+            category,
+            PatchCategory::Unknown,
+            "Register-altering MOV must not be classified as DRM bypass"
+        );
     }
 
     #[test]
     fn test_high_entropy_tail_payload_detected_as_suspicious() {
-        use tempfile::NamedTempFile;
         use std::io::Write;
+        use tempfile::NamedTempFile;
 
         let orig_bytes = vec![0x90; 128];
         let mut patch_bytes = vec![0x90; 128];
@@ -858,17 +1045,28 @@ mod tests {
 
         let report = diff_binaries(orig_file.path(), patch_file.path()).unwrap();
         assert_eq!(report.verdict, Tier::Suspicious);
-        let tail_patch = report.patches.iter().find(|p| p.section == "[EOF_APPENDED]");
-        assert!(tail_patch.is_some(), "Must detect appended tail patch region");
+        let tail_patch = report
+            .patches
+            .iter()
+            .find(|p| p.section == "[EOF_APPENDED]");
+        assert!(
+            tail_patch.is_some(),
+            "Must detect appended tail patch region"
+        );
         assert_eq!(tail_patch.unwrap().category, PatchCategory::Unknown);
-        assert!(tail_patch.unwrap().disassembly.as_ref().unwrap().contains("entropy"));
+        assert!(tail_patch
+            .unwrap()
+            .disassembly
+            .as_ref()
+            .unwrap()
+            .contains("entropy"));
     }
 
     #[test]
     fn test_appended_authenticode_signature_classified_as_digital_signature() {
-        use tempfile::NamedTempFile;
-        use std::io::Write;
         use crate::lab::create_minimal_pe;
+        use std::io::Write;
+        use tempfile::NamedTempFile;
 
         // Create a valid original minimal PE
         let orig_bytes = create_minimal_pe(".text", b"\x90\x90\x90\x90\xC3NormalFunction");
@@ -902,20 +1100,30 @@ mod tests {
             "Appended Authenticode digital signature must NOT trigger false positive Suspicious or HighRisk"
         );
 
-        let sig_patch = report.patches.iter().find(|p| p.section == "[AUTHENTICODE_SIGNATURE]");
-        assert!(sig_patch.is_some(), "Must detect Authenticode signature section");
+        let sig_patch = report
+            .patches
+            .iter()
+            .find(|p| p.section == "[AUTHENTICODE_SIGNATURE]");
+        assert!(
+            sig_patch.is_some(),
+            "Must detect Authenticode signature section"
+        );
         let sig = sig_patch.unwrap();
         assert_eq!(sig.category, PatchCategory::DigitalSignature);
         assert_eq!(sig.offset, cert_offset as u64);
         assert_eq!(sig.size, cert_size as u64);
-        assert!(sig.disassembly.as_ref().unwrap().contains("Authenticode digital signature table"));
+        assert!(sig
+            .disassembly
+            .as_ref()
+            .unwrap()
+            .contains("Authenticode digital signature table"));
     }
 
     #[test]
     fn test_appended_authenticode_signature_plus_drm_bypass_verdict() {
-        use tempfile::NamedTempFile;
-        use std::io::Write;
         use crate::lab::create_minimal_pe;
+        use std::io::Write;
+        use tempfile::NamedTempFile;
 
         // Original binary with conditional branch JZ +10 (74 0A) in .text
         let orig_bytes = create_minimal_pe(".text", b"\x74\x0A\x90\x90\x90\xC3NormalFunction");
@@ -949,11 +1157,17 @@ mod tests {
             "DRM bypass combined with Authenticode signature must evaluate to NO INDICATORS FOUND"
         );
         assert!(
-            report.patches.iter().any(|p| p.category == PatchCategory::DrmBypass),
+            report
+                .patches
+                .iter()
+                .any(|p| p.category == PatchCategory::DrmBypass),
             "Must detect DRM bypass"
         );
         assert!(
-            report.patches.iter().any(|p| p.category == PatchCategory::DigitalSignature),
+            report
+                .patches
+                .iter()
+                .any(|p| p.category == PatchCategory::DigitalSignature),
             "Must detect DigitalSignature"
         );
     }

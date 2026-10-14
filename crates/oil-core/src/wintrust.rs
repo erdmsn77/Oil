@@ -27,7 +27,7 @@ pub fn verify_authenticode(path: &Path) -> TrustStatus {
     use std::os::windows::ffi::OsStrExt;
 
     #[repr(C)]
-    struct GUID {
+    struct Guid {
         data1: u32,
         data2: u16,
         data3: u16,
@@ -35,7 +35,7 @@ pub fn verify_authenticode(path: &Path) -> TrustStatus {
     }
 
     // WINTRUST_ACTION_GENERIC_VERIFY_V2: {00AAC56B-CD44-11d0-8CC2-00C04FC295EE}
-    const WINTRUST_ACTION_GENERIC_VERIFY_V2: GUID = GUID {
+    const WINTRUST_ACTION_GENERIC_VERIFY_V2: Guid = Guid {
         data1: 0x00aac56b,
         data2: 0xcd44,
         data3: 0x11d0,
@@ -53,7 +53,7 @@ pub fn verify_authenticode(path: &Path) -> TrustStatus {
         cb_struct: u32,
         pcwsz_file_path: *const u16,
         h_file: *mut std::ffi::c_void,
-        pg_known_subject: *const GUID,
+        pg_known_subject: *const Guid,
     }
 
     #[repr(C)]
@@ -77,7 +77,7 @@ pub fn verify_authenticode(path: &Path) -> TrustStatus {
     extern "system" {
         fn WinVerifyTrust(
             hwnd: *mut std::ffi::c_void,
-            pg_action_id: *const GUID,
+            pg_action_id: *const Guid,
             p_wvt_data: *mut WINTRUST_DATA,
         ) -> i32;
     }
@@ -118,10 +118,10 @@ pub fn verify_authenticode(path: &Path) -> TrustStatus {
 
     match status as u32 {
         0 => TrustStatus::Valid,
-        0x800B_0100 => TrustStatus::NotSigned,       // TRUST_E_NOSIGNATURE
-        0x800B_0004 => TrustStatus::BadDigest,       // TRUST_E_BAD_DIGEST
-        0x800B_0109 => TrustStatus::UntrustedRoot,   // CERT_E_UNTRUSTEDROOT
-        0x800B_0111 => TrustStatus::Distrusted,      // TRUST_E_EXPLICIT_DISTRUST
+        0x800B_0100 => TrustStatus::NotSigned, // TRUST_E_NOSIGNATURE
+        0x800B_0004 => TrustStatus::BadDigest, // TRUST_E_BAD_DIGEST
+        0x800B_0109 => TrustStatus::UntrustedRoot, // CERT_E_UNTRUSTEDROOT
+        0x800B_0111 => TrustStatus::Distrusted, // TRUST_E_EXPLICIT_DISTRUST
         _ => TrustStatus::Failed(status),
     }
 }

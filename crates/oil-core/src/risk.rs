@@ -34,7 +34,8 @@ pub fn detect_format_hint(path: Option<&Path>, bytes: &[u8], is_pe: bool) -> Fil
     let has_mz = bytes.len() >= 2 && &bytes[0..2] == b"MZ";
     if has_mz {
         return FileFormatHint::CorruptExecutable(
-            "File begins with MZ DOS signature but PE parser failed to validate structure".to_string(),
+            "File begins with MZ DOS signature but PE parser failed to validate structure"
+                .to_string(),
         );
     }
 
@@ -56,7 +57,10 @@ pub fn detect_format_hint(path: Option<&Path>, bytes: &[u8], is_pe: bool) -> Fil
     if bytes.starts_with(b"7z\xbc\xaf\x27\x1c") || ext == "7z" {
         return FileFormatHint::UnsupportedContainer("7-Zip Archive (.7z)");
     }
-    if bytes.starts_with(b"Rar!\x1a\x07\x00") || bytes.starts_with(b"Rar!\x1a\x07\x01\x00") || ext == "rar" {
+    if bytes.starts_with(b"Rar!\x1a\x07\x00")
+        || bytes.starts_with(b"Rar!\x1a\x07\x01\x00")
+        || ext == "rar"
+    {
         return FileFormatHint::UnsupportedContainer("RAR Archive (.rar)");
     }
     if bytes.starts_with(b"MSCF") || ext == "cab" {
@@ -95,7 +99,8 @@ pub fn detect_format_hint(path: Option<&Path>, bytes: &[u8], is_pe: bool) -> Fil
     if bytes.starts_with(b"\x7fELF") {
         return FileFormatHint::UnsupportedContainer("Linux ELF Executable");
     }
-    if bytes.starts_with(&[0xFE, 0xED, 0xFA, 0xCE]) || bytes.starts_with(&[0xFE, 0xED, 0xFA, 0xCF]) {
+    if bytes.starts_with(&[0xFE, 0xED, 0xFA, 0xCE]) || bytes.starts_with(&[0xFE, 0xED, 0xFA, 0xCF])
+    {
         return FileFormatHint::UnsupportedContainer("macOS Mach-O Executable");
     }
 
@@ -178,7 +183,8 @@ pub fn evaluate_risk(
             ),
             _ => (
                 "Non-executable file with zero threat indicators observed.".to_string(),
-                "File contains no executable structure and zero matched threat indicators.".to_string(),
+                "File contains no executable structure and zero matched threat indicators."
+                    .to_string(),
             ),
         };
         return RiskEvaluation {
@@ -208,6 +214,9 @@ pub fn evaluate_risk(
     let mut has_sideload_proxy = false;
     let mut sideload_shadows_system = false;
     let mut sideload_dll_name = String::new();
+    let mut has_emulator_profile = false;
+    let mut emulator_name = String::new();
+    let mut is_emulator_legitimate = false;
 
     let mut reasons = Vec::new();
 
@@ -231,15 +240,24 @@ pub fn evaluate_risk(
             }
             EvidenceKind::InjectionImport { dll, functions } => {
                 has_injection_import = true;
-                reasons.push(format!("Process injection APIs from '{}' ({:?})", dll, functions));
+                reasons.push(format!(
+                    "Process injection APIs from '{}' ({:?})",
+                    dll, functions
+                ));
             }
             EvidenceKind::NetworkImport { dll, functions } => {
                 has_network_import = true;
-                reasons.push(format!("Socket/network API imports from '{}' ({:?})", dll, functions));
+                reasons.push(format!(
+                    "Socket/network API imports from '{}' ({:?})",
+                    dll, functions
+                ));
             }
             EvidenceKind::SensitiveApiImport { dll, functions } => {
                 has_sensitive_api = true;
-                reasons.push(format!("Cryptographic/DPAPI API imports from '{}' ({:?})", dll, functions));
+                reasons.push(format!(
+                    "Cryptographic/DPAPI API imports from '{}' ({:?})",
+                    dll, functions
+                ));
             }
             EvidenceKind::SignatureStatus { valid, .. } => {
                 if *valid {
@@ -254,10 +272,16 @@ pub fn evaluate_risk(
             EvidenceKind::HighEntropySection { name, entropy } if item.is_threat_signal => {
                 if name == "NO_EXEC_CODE" {
                     has_codeless_container = true;
-                    reasons.push(format!("Codeless payload container (zero code sections, max entropy {:.2})", entropy));
+                    reasons.push(format!(
+                        "Codeless payload container (zero code sections, max entropy {:.2})",
+                        entropy
+                    ));
                 } else if *entropy >= 7.95 {
                     has_extreme_entropy = true;
-                    reasons.push(format!("Near-maximal section entropy in '{}' ({:.2})", name, entropy));
+                    reasons.push(format!(
+                        "Near-maximal section entropy in '{}' ({:.2})",
+                        name, entropy
+                    ));
                 } else {
                     has_high_entropy_section = true;
                     reasons.push(format!("High-entropy section '{}' ({:.2})", name, entropy));
@@ -265,7 +289,10 @@ pub fn evaluate_risk(
             }
             EvidenceKind::Overlay { size_bytes } if item.is_threat_signal => {
                 has_overlay_anomaly = true;
-                reasons.push(format!("High-entropy unmapped overlay ({} bytes appended)", size_bytes));
+                reasons.push(format!(
+                    "High-entropy unmapped overlay ({} bytes appended)",
+                    size_bytes
+                ));
             }
             EvidenceKind::CrypterProfile { indicators } => {
                 has_crypter_profile = true;
@@ -275,15 +302,35 @@ pub fn evaluate_risk(
                 has_yara_match = true;
                 reasons.push(format!("YARA signature match: '{}'", rule_name));
             }
-            EvidenceKind::DllProxyHook { dll_name, shadows_system } => {
+            EvidenceKind::DllProxyHook {
+                dll_name,
+                shadows_system,
+            } => {
                 has_sideload_proxy = true;
                 sideload_shadows_system = sideload_shadows_system || *shadows_system;
                 sideload_dll_name = dll_name.clone();
                 if *shadows_system {
-                    reasons.push(format!("DLL proxy hook shadowing system library '{}'", dll_name));
+                    reasons.push(format!(
+                        "DLL proxy hook shadowing system library '{}'",
+                        dll_name
+                    ));
                 } else {
                     reasons.push(format!("Known platform emulator/proxy hook '{}'", dll_name));
                 }
+            }
+            EvidenceKind::EmulatorProfile {
+                name,
+                is_legitimate,
+                indicators,
+            } => {
+                has_emulator_profile = true;
+                emulator_name = name.clone();
+                is_emulator_legitimate = *is_legitimate;
+                reasons.push(format!(
+                    "Gaming platform emulator profile: '{}' ({} indicators)",
+                    name,
+                    indicators.len()
+                ));
             }
             _ => {}
         }
@@ -353,28 +400,38 @@ pub fn evaluate_risk(
     // Synergy 1: Infostealer combination (Exfil endpoint + Credential targets)
     if has_webhook_or_telegram && !credential_paths.is_empty() {
         threat_score = threat_score.saturating_add(35);
-        score_breakdown.push("+35 Synergy: Infostealer pattern (Exfiltration channel + Credential targets)".to_string());
+        score_breakdown.push(
+            "+35 Synergy: Infostealer pattern (Exfiltration channel + Credential targets)"
+                .to_string(),
+        );
     }
 
     // Synergy 2: Harvester combination (Multi-family credentials + Outbound network sockets)
     if distinct_browser_targets >= 2 && has_network_import {
         threat_score = threat_score.saturating_add(25);
-        score_breakdown.push("+25 Synergy: Multi-browser harvester with network socket capability".to_string());
+        score_breakdown.push(
+            "+25 Synergy: Multi-browser harvester with network socket capability".to_string(),
+        );
     }
 
     // Synergy 3: Harvester with DPAPI unprotect capability
     if distinct_browser_targets >= 2 && has_sensitive_api {
         threat_score = threat_score.saturating_add(10);
-        score_breakdown.push("+10 Synergy: Multi-browser harvester with DPAPI/crypto unprotect capability".to_string());
+        score_breakdown.push(
+            "+10 Synergy: Multi-browser harvester with DPAPI/crypto unprotect capability"
+                .to_string(),
+        );
     }
 
     // 3. Execution & Staging
     if has_powershell_dropper {
         threat_score = threat_score.saturating_add(30);
-        score_breakdown.push("+30: Encoded/hidden PowerShell command dropper indicator".to_string());
+        score_breakdown
+            .push("+30: Encoded/hidden PowerShell command dropper indicator".to_string());
         if has_webhook_or_telegram || has_injection_import {
             threat_score = threat_score.saturating_add(25);
-            score_breakdown.push("+25 Synergy: Stager/dropper paired with payload delivery".to_string());
+            score_breakdown
+                .push("+25 Synergy: Stager/dropper paired with payload delivery".to_string());
         }
     }
 
@@ -383,11 +440,17 @@ pub fn evaluate_risk(
         score_breakdown.push("+25: Process injection API imports".to_string());
         if has_rwx_section || has_crypter_profile {
             threat_score = threat_score.saturating_add(35);
-            score_breakdown.push("+35 Synergy: Process injection paired with memory modification/crypter stub".to_string());
+            score_breakdown.push(
+                "+35 Synergy: Process injection paired with memory modification/crypter stub"
+                    .to_string(),
+            );
         }
         if has_network_import {
             threat_score = threat_score.saturating_add(20);
-            score_breakdown.push("+20 Synergy: Process injection APIs paired with outbound network capabilities".to_string());
+            score_breakdown.push(
+                "+20 Synergy: Process injection APIs paired with outbound network capabilities"
+                    .to_string(),
+            );
         }
     }
 
@@ -399,7 +462,9 @@ pub fn evaluate_risk(
 
     if has_crypter_profile {
         threat_score = threat_score.saturating_add(35);
-        score_breakdown.push("+35: Crypter structural profile (minimal loader + encrypted payload)".to_string());
+        score_breakdown.push(
+            "+35: Crypter structural profile (minimal loader + encrypted payload)".to_string(),
+        );
     }
 
     if has_codeless_container {
@@ -451,18 +516,43 @@ pub fn evaluate_risk(
         }
     }
 
-    // 6. Digital Signature Mitigation
+    // 6. Gaming Platform / Steam Emulator Synergy & Mitigation
+    let has_hostile_emulator_vectors = has_webhook_or_telegram
+        || distinct_browser_targets >= 2
+        || has_injection_import
+        || has_powershell_dropper
+        || has_yara_match;
+
+    if has_emulator_profile && has_hostile_emulator_vectors {
+        threat_score = threat_score.saturating_add(40);
+        score_breakdown.push(format!(
+            "+40 Synergy: Poisoned Gaming Platform Emulator / Trojanized Crack ('{}' paired with hostile malware vectors)",
+            emulator_name
+        ));
+    } else if has_emulator_profile && is_emulator_legitimate && !has_hostile_emulator_vectors {
+        threat_score = threat_score.saturating_sub(15);
+        score_breakdown.push(format!(
+            "-15 Mitigation: Verified offline gaming platform emulator ('{}') without hostile vectors",
+            emulator_name
+        ));
+    }
+
+    // 7. Digital Signature Mitigation
     let is_confirmed_hostile = has_yara_match
         || (has_webhook_or_telegram && !credential_paths.is_empty())
         || (has_injection_import && (has_rwx_section || has_crypter_profile || has_sideload_proxy))
         || (has_injection_import && has_network_import)
         || (distinct_browser_targets >= 3 && has_network_import)
+        || (has_emulator_profile && has_hostile_emulator_vectors)
         || has_codeless_container;
 
     if has_valid_signature && !is_confirmed_hostile {
         let mitigation = if has_extreme_entropy { 5 } else { 15 };
         threat_score = threat_score.saturating_sub(mitigation);
-        score_breakdown.push(format!("-{} Mitigation: Authenticode digital signature verified", mitigation));
+        score_breakdown.push(format!(
+            "-{} Mitigation: Authenticode digital signature verified",
+            mitigation
+        ));
     }
 
     // Isolated or local proxy hook guard:
@@ -474,7 +564,7 @@ pub fn evaluate_risk(
         || distinct_browser_targets >= 2
         || has_yara_match
         || has_powershell_dropper;
-    if has_sideload_proxy && !is_hostile_sideload_vector {
+    if (has_sideload_proxy || has_emulator_profile) && !is_hostile_sideload_vector {
         threat_score = threat_score.min(55);
     }
 
@@ -484,6 +574,11 @@ pub fn evaluate_risk(
     if threat_score >= 60 {
         let summary = if has_yara_match {
             "High-confidence signature match detected for known malicious payload.".to_string()
+        } else if has_emulator_profile && has_hostile_emulator_vectors {
+            format!(
+                "Poisoned Gaming Platform Emulator detected: Fake or trojanized {} carrying active malware vectors.",
+                emulator_name
+            )
         } else if has_webhook_or_telegram && !credential_paths.is_empty() {
             "Confirmed infostealer pattern: Exfiltration pipe paired with credential database targets.".to_string()
         } else if has_sideload_proxy && has_injection_import {
@@ -506,7 +601,10 @@ pub fn evaluate_risk(
         } else if has_injection_import && has_network_import {
             "Hostile remote injection pattern: Process injection APIs paired with outbound network capabilities.".to_string()
         } else {
-            format!("High-risk multi-vector threat profile observed (Threat Score: {}/100).", threat_score)
+            format!(
+                "High-risk multi-vector threat profile observed (Threat Score: {}/100).",
+                threat_score
+            )
         };
 
         reasons.extend(score_breakdown);
@@ -518,21 +616,35 @@ pub fn evaluate_risk(
     }
 
     if threat_score >= 20 {
-        let summary = if has_sideload_proxy && (has_rwx_section || has_high_entropy_section || has_crypter_profile) {
+        let summary = if has_emulator_profile && !has_hostile_emulator_vectors {
+            format!(
+                "{} with structural packing/entropy anomalies (Zero network or credential exfiltration capabilities).",
+                emulator_name
+            )
+        } else if has_sideload_proxy
+            && (has_rwx_section || has_high_entropy_section || has_crypter_profile)
+        {
             "Untrusted Sideloading Loader / Local Hook (Zero network capabilities, potential license bypass or mod hook)".to_string()
         } else if has_crypter_profile {
             "Suspicious crypter/packer structural anomaly detected.".to_string()
         } else if has_sideload_proxy && has_rwx_section {
-            format!("Self-modifying runtime-unpacked proxy DLL detected ('{}').", sideload_dll_name)
+            format!(
+                "Self-modifying runtime-unpacked proxy DLL detected ('{}').",
+                sideload_dll_name
+            )
         } else if has_sideload_proxy && has_high_entropy_section {
-            format!("Packed/encrypted proxy DLL detected ('{}').", sideload_dll_name)
+            format!(
+                "Packed/encrypted proxy DLL detected ('{}').",
+                sideload_dll_name
+            )
         } else if has_sideload_proxy && sideload_shadows_system {
             format!(
                 "DLL search-order hijacking / proxy hook detected ('{}' shadowing system library).",
                 sideload_dll_name
             )
         } else if has_webhook_or_telegram {
-            "Isolated webhook reference found without confirming harvesting combination.".to_string()
+            "Isolated webhook reference found without confirming harvesting combination."
+                .to_string()
         } else if distinct_browser_targets >= 2 {
             "Multi-browser path strings detected across distinct competitor families.".to_string()
         } else if has_injection_import && has_network_import {
@@ -560,13 +672,36 @@ pub fn evaluate_risk(
     }
 
     // — NO INDICATORS FOUND —
+    let (summary, primary_reasons) = if has_emulator_profile && !has_hostile_emulator_vectors {
+        (
+            format!(
+                "Verified {}: Offline DRM emulation profile with zero hostile indicators.",
+                emulator_name
+            ),
+            vec![
+                format!(
+                    "Legitimate offline emulator architecture ('{}').",
+                    emulator_name
+                ),
+                "Zero matched stealer patterns, exfiltration pipes, or injection anomalies."
+                    .to_string(),
+            ],
+        )
+    } else {
+        (
+            "Zero threat IOCs or structural anomalies observed.".to_string(),
+            vec![
+                "Coherent PE section structure and entropy within normal distribution.".to_string(),
+                "Zero matched stealer patterns, exfiltration pipes, or injection anomalies."
+                    .to_string(),
+            ],
+        )
+    };
+
     RiskEvaluation {
         tier: Tier::NoIndicatorsFound,
-        summary: "Zero threat IOCs or structural anomalies observed.".to_string(),
-        primary_reasons: vec![
-            "Coherent PE section structure and entropy within normal distribution.".to_string(),
-            "Zero matched stealer patterns, exfiltration pipes, or injection anomalies.".to_string(),
-        ],
+        summary,
+        primary_reasons,
     }
 }
 
@@ -608,7 +743,13 @@ pub fn correlate_sideloading_suite(reports: &mut [ScanReport]) {
             }
 
             let is_proxy = r.evidence.iter().any(|e| {
-                matches!(&e.kind, EvidenceKind::DllProxyHook { shadows_system: true, .. })
+                matches!(
+                    &e.kind,
+                    EvidenceKind::DllProxyHook {
+                        shadows_system: true,
+                        ..
+                    }
+                )
             });
 
             let is_packed = r.evidence.iter().any(|e| {
@@ -629,7 +770,9 @@ pub fn correlate_sideloading_suite(reports: &mut [ScanReport]) {
         // Require at least one proxy DLL and at least one packed binary, and distinct files
         let has_distinct_pair = !proxy_indices.is_empty()
             && !packed_indices.is_empty()
-            && proxy_indices.iter().any(|&pi| packed_indices.iter().any(|&pki| pi != pki));
+            && proxy_indices
+                .iter()
+                .any(|&pi| packed_indices.iter().any(|&pki| pi != pki));
 
         if !has_distinct_pair {
             continue;
@@ -652,7 +795,10 @@ pub fn correlate_sideloading_suite(reports: &mut [ScanReport]) {
             let r = &reports[idx];
 
             // 1. Network check
-            if r.evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::NetworkImport { .. })) {
+            if r.evidence
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::NetworkImport { .. }))
+            {
                 suite_has_network = true;
             }
             if let Some(ref autopsy) = r.autopsy {
@@ -666,7 +812,10 @@ pub fn correlate_sideloading_suite(reports: &mut [ScanReport]) {
             }
 
             // 2. Process injection check
-            if r.evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::InjectionImport { .. })) {
+            if r.evidence
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::InjectionImport { .. }))
+            {
                 suite_has_injection = true;
             }
 
@@ -941,7 +1090,10 @@ mod tests {
             Evidence {
                 kind: EvidenceKind::InjectionImport {
                     dll: "kernel32.dll".to_string(),
-                    functions: vec!["VirtualAllocEx".to_string(), "WriteProcessMemory".to_string()],
+                    functions: vec![
+                        "VirtualAllocEx".to_string(),
+                        "WriteProcessMemory".to_string(),
+                    ],
                 },
                 is_threat_signal: true,
                 explanation: "test".to_string(),
@@ -1049,7 +1201,10 @@ mod tests {
             Evidence {
                 kind: EvidenceKind::InjectionImport {
                     dll: "kernel32.dll".to_string(),
-                    functions: vec!["CreateRemoteThread".to_string(), "VirtualAllocEx".to_string()],
+                    functions: vec![
+                        "CreateRemoteThread".to_string(),
+                        "VirtualAllocEx".to_string(),
+                    ],
                 },
                 is_threat_signal: true,
                 explanation: "test".to_string(),
@@ -1076,8 +1231,13 @@ mod tests {
         // Score: +25 (injection) + 20 (synergy: injection + network) = 45 -> Suspicious
         // is_confirmed_hostile prevents digital signature mitigation discount
         assert_eq!(eval.tier, Tier::Suspicious);
-        assert!(eval.primary_reasons.iter().any(|r| r.contains("+20 Synergy: Process injection APIs paired with outbound network capabilities")));
-        assert!(!eval.primary_reasons.iter().any(|r| r.contains("-15 Mitigation")));
+        assert!(eval.primary_reasons.iter().any(|r| r.contains(
+            "+20 Synergy: Process injection APIs paired with outbound network capabilities"
+        )));
+        assert!(!eval
+            .primary_reasons
+            .iter()
+            .any(|r| r.contains("-15 Mitigation")));
         assert_eq!(
             eval.summary,
             "Suspicious capability: Process injection APIs paired with outbound network capabilities."
@@ -1099,7 +1259,10 @@ mod tests {
             Evidence {
                 kind: EvidenceKind::InjectionImport {
                     dll: "kernel32.dll".to_string(),
-                    functions: vec!["VirtualAllocEx".to_string(), "WriteProcessMemory".to_string()],
+                    functions: vec![
+                        "VirtualAllocEx".to_string(),
+                        "WriteProcessMemory".to_string(),
+                    ],
                 },
                 is_threat_signal: true,
                 explanation: "test".to_string(),
@@ -1111,7 +1274,9 @@ mod tests {
             Tier::HighRisk,
             "Proxy DLL with injection imports must yield HIGH RISK"
         );
-        assert!(eval.summary.contains("Hostile DLL sideloading proxy loader"));
+        assert!(eval
+            .summary
+            .contains("Hostile DLL sideloading proxy loader"));
     }
 
     #[test]
@@ -1140,7 +1305,10 @@ mod tests {
             Tier::Suspicious,
             "Proxy DLL with RWX section must yield SUSPICIOUS"
         );
-        assert!(eval.summary.contains("Untrusted Sideloading Loader") || eval.summary.contains("Self-modifying"));
+        assert!(
+            eval.summary.contains("Untrusted Sideloading Loader")
+                || eval.summary.contains("Self-modifying")
+        );
     }
 
     #[test]
@@ -1297,8 +1465,12 @@ mod tests {
 
         assert_eq!(reports[0].verdict, Tier::HighRisk);
         assert_eq!(reports[1].verdict, Tier::HighRisk);
-        assert!(reports[0].verdict_summary.contains("Hostile DLL Sideloading Suite"));
-        assert!(reports[1].verdict_summary.contains("Hostile DLL Sideloading Suite"));
+        assert!(reports[0]
+            .verdict_summary
+            .contains("Hostile DLL Sideloading Suite"));
+        assert!(reports[1]
+            .verdict_summary
+            .contains("Hostile DLL Sideloading Suite"));
     }
 
     #[test]
@@ -1426,5 +1598,167 @@ mod tests {
         assert_eq!(reports[0].verdict_summary, "Initial");
         assert_eq!(reports[1].verdict_summary, "Initial");
     }
-}
 
+    #[test]
+    fn test_goldberg_emulator_profile_alone_is_no_indicators_found() {
+        let evidence = vec![
+            Evidence {
+                kind: EvidenceKind::EmulatorProfile {
+                    name: "Goldberg Steam Emulator".to_string(),
+                    is_legitimate: true,
+                    indicators: vec![
+                        "Goldberg/Generic 'steam_settings' configuration folder reference"
+                            .to_string(),
+                        "Steamworks interface definition file ('steam_interfaces.txt')".to_string(),
+                        "Exports 5 Steamworks C-API functions".to_string(),
+                    ],
+                },
+                is_threat_signal: false,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "steam_api64.dll".to_string(),
+                    shadows_system: false,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+        ];
+
+        let eval = evaluate_risk(&evidence, true, &FileFormatHint::PeExecutable);
+        assert_eq!(eval.tier, Tier::NoIndicatorsFound);
+        assert!(eval.summary.contains("Verified Goldberg Steam Emulator"));
+    }
+
+    #[test]
+    fn test_poisoned_steam_emulator_with_webhook_is_high_risk() {
+        let evidence = vec![
+            Evidence {
+                kind: EvidenceKind::EmulatorProfile {
+                    name: "Goldberg Steam Emulator".to_string(),
+                    is_legitimate: true,
+                    indicators: vec![
+                        "Goldberg/Generic 'steam_settings' configuration folder reference"
+                            .to_string(),
+                        "Exports 5 Steamworks C-API functions".to_string(),
+                    ],
+                },
+                is_threat_signal: false,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::DiscordWebhook {
+                    url: "https://discord.com/api/webhooks/123/xyz".to_string(),
+                    encoding: crate::models::StringEncoding::Ascii,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+        ];
+
+        let eval = evaluate_risk(&evidence, true, &FileFormatHint::PeExecutable);
+        assert_eq!(eval.tier, Tier::HighRisk);
+        assert!(eval.summary.contains("Poisoned Gaming Platform Emulator"));
+    }
+
+    #[test]
+    fn test_poisoned_steam_emulator_with_injection_is_high_risk() {
+        let evidence = vec![
+            Evidence {
+                kind: EvidenceKind::EmulatorProfile {
+                    name: "Steamworks C-API Emulator / Wrapper".to_string(),
+                    is_legitimate: true,
+                    indicators: vec!["Exports 4 Steamworks C-API functions".to_string()],
+                },
+                is_threat_signal: false,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::InjectionImport {
+                    dll: "kernel32.dll".to_string(),
+                    functions: vec![
+                        "VirtualAllocEx".to_string(),
+                        "WriteProcessMemory".to_string(),
+                    ],
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+        ];
+
+        let eval = evaluate_risk(&evidence, true, &FileFormatHint::PeExecutable);
+        assert_eq!(eval.tier, Tier::HighRisk);
+        assert!(eval.summary.contains("Poisoned Gaming Platform Emulator"));
+    }
+
+    #[test]
+    fn test_eos_emulator_profile_alone_is_no_indicators_found() {
+        let evidence = vec![
+            Evidence {
+                kind: EvidenceKind::EmulatorProfile {
+                    name: "ScreamAPI (Epic DLC Unlocker)".to_string(),
+                    is_legitimate: true,
+                    indicators: vec![
+                        "ScreamAPI (Epic Online Services DLC unlocker) marker".to_string(),
+                        "Acidicoala (ScreamAPI / Koaloader author) signature".to_string(),
+                        "Exports 4 Epic Online Services (EOS) C-API functions".to_string(),
+                    ],
+                },
+                is_threat_signal: false,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::DllProxyHook {
+                    dll_name: "EOSSDK-Win64-Shipping.dll".to_string(),
+                    shadows_system: false,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+        ];
+
+        let eval = evaluate_risk(&evidence, true, &FileFormatHint::PeExecutable);
+        assert_eq!(eval.tier, Tier::NoIndicatorsFound);
+        assert!(eval
+            .summary
+            .contains("Verified ScreamAPI (Epic DLC Unlocker)"));
+    }
+
+    #[test]
+    fn test_poisoned_eos_emulator_with_browser_stealer_is_high_risk() {
+        let evidence = vec![
+            Evidence {
+                kind: EvidenceKind::EmulatorProfile {
+                    name: "Epic Online Services (EOS) Emulator".to_string(),
+                    is_legitimate: true,
+                    indicators: vec![
+                        "Exports 12 Epic Online Services (EOS) C-API functions".to_string()
+                    ],
+                },
+                is_threat_signal: false,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::CredentialPath {
+                    path: "Google\\Chrome\\User Data\\Default\\Login Data".to_string(),
+                    encoding: crate::models::StringEncoding::Ascii,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+            Evidence {
+                kind: EvidenceKind::CredentialPath {
+                    path: "Mozilla\\Firefox\\Profiles\\key4.db".to_string(),
+                    encoding: crate::models::StringEncoding::Ascii,
+                },
+                is_threat_signal: true,
+                explanation: "test".to_string(),
+            },
+        ];
+
+        let eval = evaluate_risk(&evidence, true, &FileFormatHint::PeExecutable);
+        assert_eq!(eval.tier, Tier::HighRisk);
+        assert!(eval.summary.contains("Poisoned Gaming Platform Emulator"));
+    }
+}

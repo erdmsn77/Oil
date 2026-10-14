@@ -29,11 +29,17 @@ fn test_bench_stealer_high_risk() {
         "Stealer (webhook + Chrome path) must trigger HIGH RISK"
     );
     assert!(
-        report.evidence.iter().any(|e| matches!(&e.kind, oil_core::models::EvidenceKind::DiscordWebhook { .. })),
+        report.evidence.iter().any(|e| matches!(
+            &e.kind,
+            oil_core::models::EvidenceKind::DiscordWebhook { .. }
+        )),
         "Must flag Discord Webhook"
     );
     assert!(
-        report.evidence.iter().any(|e| matches!(&e.kind, oil_core::models::EvidenceKind::CredentialPath { .. })),
+        report.evidence.iter().any(|e| matches!(
+            &e.kind,
+            oil_core::models::EvidenceKind::CredentialPath { .. }
+        )),
         "Must flag Credential Path"
     );
 }
@@ -63,7 +69,10 @@ fn test_bench_entropy_suspicious() {
         "High entropy section (> 7.5) must trigger SUSPICIOUS"
     );
     assert!(
-        report.evidence.iter().any(|e| matches!(&e.kind, oil_core::models::EvidenceKind::HighEntropySection { .. })),
+        report.evidence.iter().any(|e| matches!(
+            &e.kind,
+            oil_core::models::EvidenceKind::HighEntropySection { .. }
+        )),
         "Must flag HighEntropySection evidence"
     );
 }
@@ -96,7 +105,9 @@ fn test_bench_zipbomb_inconclusive() {
 
     // Exceed max archive entries limit (1001 entries > 1000 limit)
     for i in 0..1005 {
-        writer.start_file(format!("dummy_{}.txt", i), options).unwrap();
+        writer
+            .start_file(format!("dummy_{}.txt", i), options)
+            .unwrap();
         writer.write_all(b"0").unwrap();
     }
     writer.finish().unwrap();
@@ -110,7 +121,10 @@ fn test_bench_zipbomb_inconclusive() {
         Tier::Inconclusive,
         "Exceeding entry limits must trigger INCONCLUSIVE"
     );
-    assert!(report.verdict_summary.contains("Inconclusive") || report.verdict_summary.contains("inconclusive"));
+    assert!(
+        report.verdict_summary.contains("Inconclusive")
+            || report.verdict_summary.contains("inconclusive")
+    );
 }
 
 #[test]
@@ -155,7 +169,10 @@ fn test_bench_diff_code_injection_verdict() {
     let diff_report = oil_core::diff::diff_binaries(orig_file.path(), patch_file.path()).unwrap();
     assert_eq!(diff_report.verdict, Tier::HighRisk);
     assert!(!diff_report.patches.is_empty());
-    assert_eq!(diff_report.patches[0].category, PatchCategory::CodeInjection);
+    assert_eq!(
+        diff_report.patches[0].category,
+        PatchCategory::CodeInjection
+    );
 }
 
 #[test]
@@ -170,7 +187,9 @@ fn test_bench_corrupt_exe_extension_inconclusive() {
         Tier::Inconclusive,
         "Binary with executable extension but invalid PE structure must be INCONCLUSIVE"
     );
-    assert!(report.verdict_summary.contains("corrupt") || report.verdict_summary.contains("invalid"));
+    assert!(
+        report.verdict_summary.contains("corrupt") || report.verdict_summary.contains("invalid")
+    );
 }
 
 #[test]
@@ -180,13 +199,21 @@ fn test_bench_unsupported_containers_inconclusive() {
     let p_7z = dir.path().join("archive.7z");
     std::fs::write(&p_7z, b"7z\xbc\xaf\x27\x1c\x00\x00\x00\x00compressed data").unwrap();
     let r_7z = oil_core::scan_path(&p_7z).unwrap();
-    assert_eq!(r_7z.verdict, Tier::Inconclusive, "7z container must yield INCONCLUSIVE");
+    assert_eq!(
+        r_7z.verdict,
+        Tier::Inconclusive,
+        "7z container must yield INCONCLUSIVE"
+    );
 
     // 2. RAR magic
     let p_rar = dir.path().join("archive.rar");
     std::fs::write(&p_rar, b"Rar!\x1a\x07\x00\x00\x00\x00compressed data").unwrap();
     let r_rar = oil_core::scan_path(&p_rar).unwrap();
-    assert_eq!(r_rar.verdict, Tier::Inconclusive, "RAR container must yield INCONCLUSIVE");
+    assert_eq!(
+        r_rar.verdict,
+        Tier::Inconclusive,
+        "RAR container must yield INCONCLUSIVE"
+    );
 }
 
 #[test]
@@ -200,7 +227,9 @@ fn test_bench_zip_containing_unsupported_container_inconclusive() {
 
     // Inner file is an unsupported 7z container
     writer.start_file("malware_container.7z", options).unwrap();
-    writer.write_all(b"7z\xbc\xaf\x27\x1c\x00\x00internal payload").unwrap();
+    writer
+        .write_all(b"7z\xbc\xaf\x27\x1c\x00\x00internal payload")
+        .unwrap();
     writer.finish().unwrap();
 
     let mut file = NamedTempFile::new().unwrap();
@@ -214,5 +243,3 @@ fn test_bench_zip_containing_unsupported_container_inconclusive() {
     );
     assert!(report.files_skipped > 0);
 }
-
-

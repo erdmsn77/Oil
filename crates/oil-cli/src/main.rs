@@ -1,7 +1,9 @@
+pub mod lang;
 mod output;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use lang::Language;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -10,8 +12,12 @@ use std::path::{Path, PathBuf};
 #[command(version = "0.1.0")]
 #[command(about = "The Frictionless Reverse-Engineering & Binary Forensic Triage Engine", long_about = None)]
 struct Cli {
+    /// Interface language (tr, en, or auto)
+    #[arg(long, global = true, value_name = "LANG")]
+    lang: Option<String>,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -85,7 +91,11 @@ fn clean_input_path(input: &str) -> Option<PathBuf> {
 
     // 4. If it looks like a file path (has slashes, backslashes, colon or dot extension),
     // return it so run_scan can show a clear "Hata: Hedef bulunamadı: ..." message.
-    if direct_str.contains('\\') || direct_str.contains('/') || direct_str.contains(':') || direct_str.contains('.') {
+    if direct_str.contains('\\')
+        || direct_str.contains('/')
+        || direct_str.contains(':')
+        || direct_str.contains('.')
+    {
         return Some(direct);
     }
 
@@ -124,7 +134,9 @@ fn collect_recursive(dir: &Path, current_depth: usize, max_depth: usize, out: &m
                 }
             } else if p.is_dir() {
                 let dir_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if !dir_name.starts_with('$') && !dir_name.eq_ignore_ascii_case("System Volume Information") {
+                if !dir_name.starts_with('$')
+                    && !dir_name.eq_ignore_ascii_case("System Volume Information")
+                {
                     collect_recursive(&p, current_depth + 1, max_depth, out);
                 }
             }
@@ -132,38 +144,53 @@ fn collect_recursive(dir: &Path, current_depth: usize, max_depth: usize, out: &m
     }
 }
 
-fn run_scan(path: &Path) -> bool {
+fn run_scan(path: &Path, lang: Language) -> bool {
     if !path.exists() {
-        eprintln!(
-            "Error: Target not found / {}: {}",
-            "Hedef bulunamadı".dimmed(),
-            path.display()
-        );
+        if lang.is_turkish() {
+            eprintln!("Hata: Hedef bulunamadı: {}", path.display());
+        } else {
+            eprintln!("Error: Target not found: {}", path.display());
+        }
         return false;
     }
 
     if path.is_dir() {
         let targets = collect_executable_targets(path, 5);
         if targets.is_empty() {
-            println!(
-                "No executable targets (.exe, .dll, .lnk, .zip) found in / {}: {}",
-                "Hedef bulunamadı".dimmed(),
-                path.display()
-            );
+            if lang.is_turkish() {
+                println!(
+                    "Dizinde çalıştırılabilir dosya bulunamadı (.exe, .dll, .lnk, .zip): {}",
+                    path.display()
+                );
+            } else {
+                println!(
+                    "No executable targets (.exe, .dll, .lnk, .zip) found in: {}",
+                    path.display()
+                );
+            }
             return true;
         }
 
-        println!(
-            "\nDirectory Scan Initiated / {}: '{}' ({} files / {})",
-            "Klasör Taraması Başlatıldı".dimmed(),
-            path.display(),
-            targets.len(),
-            "dosya".dimmed()
-        );
+        if lang.is_turkish() {
+            println!(
+                "\nKlasör Taraması Başlatıldı: '{}' ({} dosya)",
+                path.display(),
+                targets.len()
+            );
+        } else {
+            println!(
+                "\nDirectory Scan Initiated: '{}' ({} files)",
+                path.display(),
+                targets.len()
+            );
+        }
 
         let mut reports: Vec<oil_core::models::ScanReport> = Vec::new();
         let mut dedupe_info: Vec<(usize, PathBuf, Option<PathBuf>)> = Vec::new();
-        let mut seen_hashes: std::collections::HashMap<String, (PathBuf, oil_core::models::ScanReport)> = std::collections::HashMap::new();
+        let mut seen_hashes: std::collections::HashMap<
+            String,
+            (PathBuf, oil_core::models::ScanReport),
+        > = std::collections::HashMap::new();
         let mut duplicate_count = 0;
 
         for (i, p) in targets.iter().enumerate() {
@@ -180,17 +207,20 @@ fn run_scan(path: &Path) -> bool {
             match oil_core::scan_path(p) {
                 Ok(report) => {
                     dedupe_info.push((i, p.clone(), None));
-                    seen_hashes.insert(report.identity.sha256.clone(), (p.to_path_buf(), report.clone()));
+                    seen_hashes.insert(
+                        report.identity.sha256.clone(),
+                        (p.to_path_buf(), report.clone()),
+                    );
                     reports.push(report);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "Error reading file {} ({}): {}",
-                        p.display(),
-                        "Dosya okunurken hata oluştu".dimmed(),
-                        e
-                    );
-                    let (sha256, blake3) = oil_core::io::dual_hash_file(p).unwrap_or_else(|_| (String::new(), String::new()));
+                    if lang.is_turkish() {
+                        eprintln!("Dosya okunurken hata oluştu {}: {}", p.display(), e);
+                    } else {
+                        eprintln!("Error reading file {}: {}", p.display(), e);
+                    }
+                    let (sha256, blake3) = oil_core::io::dual_hash_file(p)
+                        .unwrap_or_else(|_| (String::new(), String::new()));
                     let err_report = oil_core::models::ScanReport {
                         identity: oil_core::models::FileIdentity {
                             path: p.clone(),
@@ -201,7 +231,11 @@ fn run_scan(path: &Path) -> bool {
                         autopsy: None,
                         evidence: Vec::new(),
                         verdict: oil_core::models::Tier::Inconclusive,
-                        verdict_summary: format!("Failed to read file / {}: {}", "Dosya okuma hatası".dimmed(), e),
+                        verdict_summary: if lang.is_turkish() {
+                            format!("Dosya okuma hatası: {}", e)
+                        } else {
+                            format!("Failed to read file: {}", e)
+                        },
                         files_scanned: 0,
                         files_skipped: 1,
                         skip_reasons: vec![e.to_string()],
@@ -218,21 +252,37 @@ fn run_scan(path: &Path) -> bool {
         // Print dossiers with correlated verdicts
         for (idx, report) in reports.iter().enumerate() {
             let (_, ref p, ref dup) = dedupe_info[idx];
-            println!(
-                "\n[{}/{}] Scanning / {}: {}",
-                idx + 1,
-                targets.len(),
-                "Taranıyor".dimmed(),
-                p.display()
-            );
-            if let Some(ref first_path) = dup {
+            if lang.is_turkish() {
                 println!(
-                    "  {} SHA-256 Match ({}...): Exact duplicate of '{}'. {}",
-                    "[+]".green().bold(),
-                    &report.identity.sha256[..12],
-                    first_path.display(),
-                    format!("(Birebir aynı dosya - analiz atlandı)").dimmed()
+                    "\n[{}/{}] Taranıyor: {}",
+                    idx + 1,
+                    targets.len(),
+                    p.display()
                 );
+            } else {
+                println!(
+                    "\n[{}/{}] Scanning: {}",
+                    idx + 1,
+                    targets.len(),
+                    p.display()
+                );
+            }
+            if let Some(ref first_path) = dup {
+                if lang.is_turkish() {
+                    println!(
+                        "  {} SHA-256 Eşleşti ({}...): '{}' ile birebir aynı dosya (analiz atlandı).",
+                        "[+]".green().bold(),
+                        &report.identity.sha256[..12],
+                        first_path.display()
+                    );
+                } else {
+                    println!(
+                        "  {} SHA-256 Match ({}...): Exact duplicate of '{}' (cached).",
+                        "[+]".green().bold(),
+                        &report.identity.sha256[..12],
+                        first_path.display()
+                    );
+                }
             } else {
                 output::print_dossier(report);
             }
@@ -257,7 +307,9 @@ fn run_scan(path: &Path) -> bool {
             .map(|r| {
                 r.evidence
                     .iter()
-                    .filter(|e| matches!(&e.kind, oil_core::models::EvidenceKind::DllProxyHook { .. }))
+                    .filter(|e| {
+                        matches!(&e.kind, oil_core::models::EvidenceKind::DllProxyHook { .. })
+                    })
                     .count()
             })
             .sum();
@@ -285,6 +337,7 @@ fn run_scan(path: &Path) -> bool {
             proxy_hook_count,
             duplicate_count,
             has_stealer_ioc,
+            lang,
         );
 
         // Print flagged files priority breakdown table
@@ -302,32 +355,67 @@ fn run_scan(path: &Path) -> bool {
             .collect();
 
         if !flagged_reports.is_empty() {
-            println!("{}", "───────────────────────────────────────────────────────────────".yellow());
             println!(
-                "  {} PRIORITY BREAKDOWN: FLAGGED & ANOMALOUS FILES ({} total) {}",
-                "[!]".yellow().bold(),
-                flagged_reports.len(),
-                format!("// Şüpheli ve Riskli Dosyalar").dimmed()
+                "{}",
+                "───────────────────────────────────────────────────────────────".yellow()
             );
-            println!("{}", "───────────────────────────────────────────────────────────────".yellow());
+            if lang.is_turkish() {
+                println!(
+                    "  {} ÖNCELİKLİ RAPOR: ŞÜPHELİ VE RİSKLİ DOSYALAR ({} adet)",
+                    "[!]".yellow().bold(),
+                    flagged_reports.len()
+                );
+            } else {
+                println!(
+                    "  {} PRIORITY BREAKDOWN: FLAGGED & ANOMALOUS FILES ({} total)",
+                    "[!]".yellow().bold(),
+                    flagged_reports.len()
+                );
+            }
+            println!(
+                "{}",
+                "───────────────────────────────────────────────────────────────".yellow()
+            );
             for (idx, r) in flagged_reports.iter().enumerate() {
-                let v_str = match r.verdict {
-                    oil_core::models::Tier::HighRisk => format!("{} {}", "[HIGH RISK]".red().bold(), format!("[YÜKSEK RİSK]").red().dimmed()),
-                    oil_core::models::Tier::Suspicious => format!("{} {}", "[SUSPICIOUS]".yellow().bold(), format!("[ŞÜPHELİ]").yellow().dimmed()),
-                    _ => format!("{} {}", "[NOTICE]".cyan().bold(), format!("[DİKKAT]").cyan().dimmed()),
+                let v_str = if lang.is_turkish() {
+                    match r.verdict {
+                        oil_core::models::Tier::HighRisk => "[YÜKSEK RİSK]".red().bold(),
+                        oil_core::models::Tier::Suspicious => "[ŞÜPHELİ]".yellow().bold(),
+                        _ => "[DİKKAT]".cyan().bold(),
+                    }
+                } else {
+                    match r.verdict {
+                        oil_core::models::Tier::HighRisk => "[HIGH RISK]".red().bold(),
+                        oil_core::models::Tier::Suspicious => "[SUSPICIOUS]".yellow().bold(),
+                        _ => "[NOTICE]".cyan().bold(),
+                    }
                 };
 
                 let is_signed = r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true);
                 let priority_badge = if r.verdict_summary.contains("Untrusted Sideloading Loader")
                     || r.verdict_summary.contains("Local Hook")
                 {
-                    format!("{} {}", "[LOCAL HOOK]".yellow().bold(), format!("[YEREL KANCA]").yellow().dimmed())
+                    if lang.is_turkish() {
+                        "[YEREL KANCA]".yellow().bold()
+                    } else {
+                        "[LOCAL HOOK]".yellow().bold()
+                    }
                 } else if r.verdict == oil_core::models::Tier::HighRisk {
-                    format!("{} {}", "[HOSTILE LOADER]".red().bold(), format!("[ZARARLI YÜKLEYİCİ]").red().dimmed())
+                    if lang.is_turkish() {
+                        "[ZARARLI YÜKLEYİCİ]".red().bold()
+                    } else {
+                        "[HOSTILE LOADER]".red().bold()
+                    }
                 } else if is_signed {
-                    format!("{} {}", "[VENDOR SIGNED]".cyan().bold(), format!("[İMZALI KORUMA]").cyan().dimmed())
+                    if lang.is_turkish() {
+                        "[İMZALI]".cyan().bold()
+                    } else {
+                        "[VENDOR SIGNED]".cyan().bold()
+                    }
+                } else if lang.is_turkish() {
+                    "[İMZASIZ ANOMALİ]".yellow().bold()
                 } else {
-                    format!("{} {}", "[UNSIGNED ANOMALY]".yellow().bold(), format!("[İMZASIZ ANOMALİ]").yellow().dimmed())
+                    "[UNSIGNED ANOMALY]".yellow().bold()
                 };
 
                 println!(
@@ -337,7 +425,9 @@ fn run_scan(path: &Path) -> bool {
                     priority_badge,
                     r.identity.path.display().to_string().bold()
                 );
-                let (en_reason, tr_reason) = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                let (en_reason, tr_reason) = if r
+                    .verdict_summary
+                    .contains("Untrusted Sideloading Loader")
                     || r.verdict_summary.contains("Local Hook")
                 {
                     (
@@ -349,12 +439,17 @@ fn run_scan(path: &Path) -> bool {
                         "Hostile Sideloading Suite: Unsigned proxy DLL paired with loader (network/injection IOC match).",
                         "Zararlı Yan Yükleme: İmzasız proxy DLL ve zararlı loader (ağ/enjeksiyon IOC eşleşti)."
                     )
-                } else if r.verdict_summary.contains("search-order hijacking") || r.verdict_summary.contains("proxy hook") {
+                } else if r.verdict_summary.contains("search-order hijacking")
+                    || r.verdict_summary.contains("proxy hook")
+                {
                     (
                         "Windows system DLL shadowing / proxy hook (e.g. shadows 'version.dll').",
                         "Windows sistem DLL gölgeleme / proxy hook ('version.dll' kütüphanesini taklit ediyor)."
                     )
-                } else if r.verdict_summary.contains("Process injection APIs paired with outbound network") {
+                } else if r
+                    .verdict_summary
+                    .contains("Process injection APIs paired with outbound network")
+                {
                     if is_signed {
                         (
                             "Legitimate vendor telemetry/injection infrastructure (Verified signature present).",
@@ -369,13 +464,13 @@ fn run_scan(path: &Path) -> bool {
                 } else if r.verdict_summary.contains("RWX memory permissions") {
                     (
                         "RWX (Read-Write-Execute) memory permissions (runtime unpacker pattern).",
-                        "RWX (Okuma-Yazma-Çalıştırma) bellek izinleri (unpacker yapısı)."
+                        "RWX (Okuma-Yazma-Çalıştırma) bellek izinleri (unpacker yapısı).",
                     )
                 } else if r.verdict_summary.contains("Codeless data carrier") {
                     if is_signed {
                         (
                             "Codeless encrypted container (Verified vendor signature present).",
-                            "Kodsuz şifreli veri konteyneri (Doğrulanmış üretici imzası mevcut)."
+                            "Kodsuz şifreli veri konteyneri (Doğrulanmış üretici imzası mevcut).",
                         )
                     } else {
                         (
@@ -383,7 +478,11 @@ fn run_scan(path: &Path) -> bool {
                             "Kodsuz şifreli veri taşıyıcı (kod bölümü yok, saf payload konteyneri)."
                         )
                     }
-                } else if r.verdict_summary.contains("High-entropy section detected within valid binary") || r.verdict_summary.contains("Near-maximal section entropy") {
+                } else if r
+                    .verdict_summary
+                    .contains("High-entropy section detected within valid binary")
+                    || r.verdict_summary.contains("Near-maximal section entropy")
+                {
                     if is_signed {
                         (
                             "High-entropy section: Embedded license blob or compressed assets (Signed).",
@@ -392,19 +491,24 @@ fn run_scan(path: &Path) -> bool {
                     } else {
                         (
                             "High-entropy section (embedded encrypted payload or packer).",
-                            "Bölüm içinde yüksek entropi (gömülü şifreli veri veya paketleyici)."
+                            "Bölüm içinde yüksek entropi (gömülü şifreli veri veya paketleyici).",
                         )
                     }
                 } else {
-                    (r.verdict_summary.as_str(), "")
+                    (r.verdict_summary.as_str(), r.verdict_summary.as_str())
                 };
 
-                println!("      -> {}", en_reason);
-                if !tr_reason.is_empty() {
-                    println!("         {}", format!("({})", tr_reason).dimmed());
-                }
+                let reason = if lang.is_turkish() {
+                    tr_reason
+                } else {
+                    en_reason
+                };
+                println!("      -> {}", reason);
             }
-            println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
+            println!(
+                "{}",
+                "═══════════════════════════════════════════════════════════════".cyan()
+            );
             println!();
         }
 
@@ -419,6 +523,7 @@ fn run_scan(path: &Path) -> bool {
             proxy_hook_count,
             duplicate_count,
             has_stealer_ioc,
+            lang,
         );
 
         true
@@ -427,16 +532,15 @@ fn run_scan(path: &Path) -> bool {
             Ok(report) => {
                 output::print_dossier(&report);
                 // Executive summary box at the end of single file audit
-                output::print_single_summary_box(&report);
+                output::print_single_summary_box(&report, lang);
                 true
             }
             Err(e) => {
-                eprintln!(
-                    "Error scanning file {} ({}): {}",
-                    path.display(),
-                    "Dosya taranırken hata oluştu".dimmed(),
-                    e
-                );
+                if lang.is_turkish() {
+                    eprintln!("Dosya taranırken hata oluştu {}: {}", path.display(), e);
+                } else {
+                    eprintln!("Error scanning file {}: {}", path.display(), e);
+                }
                 false
             }
         }
@@ -455,6 +559,7 @@ fn handle_post_scan_navigation(
     proxy_hook_count: usize,
     duplicate_count: usize,
     has_stealer_ioc: bool,
+    lang: Language,
 ) {
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
@@ -475,43 +580,57 @@ fn handle_post_scan_navigation(
         .collect();
 
     loop {
-        println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
         println!(
-            "  {} {}",
-            "[FORENSIC NAVIGATION & AUDIT BAR]".cyan().bold(),
-            format!("// [HIZLI ADLİ NAVİGASYON]").cyan().dimmed()
+            "{}",
+            "═══════════════════════════════════════════════════════════════".cyan()
         );
-        println!("{}", "═══════════════════════════════════════════════════════════════".cyan());
-        println!(
-            "  {} Inspect Flagged / Suspicious Files {} ({} files / {})",
-            "[1]".green().bold(),
-            format!("/ Şüpheli Dosyaları İncele").dimmed(),
-            flagged_reports.len(),
-            "dosya".dimmed()
-        );
-        println!(
-            "  {} List All Scanned Files {} ({} files / {})",
-            "[2]".green().bold(),
-            format!("/ Taranan Tüm Dosyaları Listele").dimmed(),
-            total,
-            "dosya".dimmed()
-        );
-        println!(
-            "  {} Clear Console & Show Executive Summary {}",
-            "[3]".green().bold(),
-            format!("/ Başa Dön ve Özet Raporu Göster").dimmed()
-        );
-        println!(
-            "  {} Return to Main Menu / Continue {}",
-            "[4]".dimmed(),
-            format!("/ Ana Menüye Dön").dimmed()
-        );
-        println!();
-        print!(
-            "{} / {}: ",
-            "Navigation Choice".green().bold(),
-            "Navigasyon Seçimi >".green().dimmed()
-        );
+        if lang.is_turkish() {
+            println!("  {}", "[HIZLI ADLİ NAVİGASYON]".cyan().bold());
+            println!(
+                "{}",
+                "═══════════════════════════════════════════════════════════════".cyan()
+            );
+            println!(
+                "  {} Şüpheli Dosyaları İncele ({} dosya)",
+                "[1]".green().bold(),
+                flagged_reports.len()
+            );
+            println!(
+                "  {} Taranan Tüm Dosyaları Listele ({} dosya)",
+                "[2]".green().bold(),
+                total
+            );
+            println!(
+                "  {} Ekranı Temizle ve Özet Raporu Göster",
+                "[3]".green().bold()
+            );
+            println!("  {} Ana Menüye Dön / Devam Et", "[4]".dimmed());
+            println!();
+            print!("{} ", "Navigasyon Seçimi >".green().bold());
+        } else {
+            println!("  {}", "[FORENSIC NAVIGATION & AUDIT BAR]".cyan().bold());
+            println!(
+                "{}",
+                "═══════════════════════════════════════════════════════════════".cyan()
+            );
+            println!(
+                "  {} Inspect Flagged / Suspicious Files ({} files)",
+                "[1]".green().bold(),
+                flagged_reports.len()
+            );
+            println!(
+                "  {} List All Scanned Files ({} files)",
+                "[2]".green().bold(),
+                total
+            );
+            println!(
+                "  {} Clear Console & Show Executive Summary",
+                "[3]".green().bold()
+            );
+            println!("  {} Return to Main Menu / Continue", "[4]".dimmed());
+            println!();
+            print!("{} ", "Navigation Choice >".green().bold());
+        }
         let _ = std::io::stdout().flush();
 
         let mut choice = String::new();
@@ -530,38 +649,81 @@ fn handle_post_scan_navigation(
         match trimmed {
             "1" => {
                 if flagged_reports.is_empty() {
-                    println!(
-                        "\n[OK] Zero flagged or suspicious files found in directory. {}",
-                        format!("(Klasörde herhangi bir şüpheli veya riskli dosya bulunmuyor.)").dimmed()
-                    );
+                    if lang.is_turkish() {
+                        println!(
+                            "\n[OK] Klasörde herhangi bir şüpheli veya riskli dosya bulunmuyor."
+                        );
+                    } else {
+                        println!("\n[OK] Zero flagged or suspicious files found in directory.");
+                    }
                 } else {
                     println!();
-                    println!("{}", "───────────────────────────────────────────────────────────────".yellow());
                     println!(
-                        "  {} FLAGGED / SUSPICIOUS FILES ({} total) {}",
-                        "[!]".yellow().bold(),
-                        flagged_reports.len(),
-                        format!("// Şüpheli Dosyalar").dimmed()
+                        "{}",
+                        "───────────────────────────────────────────────────────────────".yellow()
                     );
-                    println!("{}", "───────────────────────────────────────────────────────────────".yellow());
+                    if lang.is_turkish() {
+                        println!(
+                            "  {} ŞÜPHELİ VE RİSKLİ DOSYALAR ({} adet)",
+                            "[!]".yellow().bold(),
+                            flagged_reports.len()
+                        );
+                    } else {
+                        println!(
+                            "  {} FLAGGED / SUSPICIOUS FILES ({} total)",
+                            "[!]".yellow().bold(),
+                            flagged_reports.len()
+                        );
+                    }
+                    println!(
+                        "{}",
+                        "───────────────────────────────────────────────────────────────".yellow()
+                    );
                     for (idx, r) in flagged_reports.iter().enumerate() {
-                        let v_str = match r.verdict {
-                            oil_core::models::Tier::HighRisk => format!("{} {}", "[HIGH RISK]".red().bold(), format!("[YÜKSEK RİSK]").red().dimmed()),
-                            oil_core::models::Tier::Suspicious => format!("{} {}", "[SUSPICIOUS]".yellow().bold(), format!("[ŞÜPHELİ]").yellow().dimmed()),
-                            _ => format!("{} {}", "[NOTICE]".cyan().bold(), format!("[DİKKAT]").cyan().dimmed()),
+                        let v_str = if lang.is_turkish() {
+                            match r.verdict {
+                                oil_core::models::Tier::HighRisk => "[YÜKSEK RİSK]".red().bold(),
+                                oil_core::models::Tier::Suspicious => "[ŞÜPHELİ]".yellow().bold(),
+                                _ => "[DİKKAT]".cyan().bold(),
+                            }
+                        } else {
+                            match r.verdict {
+                                oil_core::models::Tier::HighRisk => "[HIGH RISK]".red().bold(),
+                                oil_core::models::Tier::Suspicious => {
+                                    "[SUSPICIOUS]".yellow().bold()
+                                }
+                                _ => "[NOTICE]".cyan().bold(),
+                            }
                         };
 
-                        let priority_badge = if r.verdict_summary.contains("Untrusted Sideloading Loader")
-                            || r.verdict_summary.contains("Local Hook")
-                        {
-                            format!("{} {}", "[LOCAL HOOK]".yellow().bold(), format!("[YEREL KANCA]").yellow().dimmed())
-                        } else if r.verdict == oil_core::models::Tier::HighRisk {
-                            format!("{} {}", "[HOSTILE LOADER]".red().bold(), format!("[ZARARLI YÜKLEYİCİ]").red().dimmed())
-                        } else if r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true) {
-                            format!("{} {}", "[VENDOR SIGNED]".cyan().bold(), format!("[İMZALI KORUMA]").cyan().dimmed())
-                        } else {
-                            format!("{} {}", "[UNSIGNED ANOMALY]".yellow().bold(), format!("[İMZASIZ ANOMALİ]").yellow().dimmed())
-                        };
+                        let is_signed =
+                            r.autopsy.as_ref().and_then(|a| a.signature_valid) == Some(true);
+                        let priority_badge =
+                            if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                                || r.verdict_summary.contains("Local Hook")
+                            {
+                                if lang.is_turkish() {
+                                    "[YEREL KANCA]".yellow().bold()
+                                } else {
+                                    "[LOCAL HOOK]".yellow().bold()
+                                }
+                            } else if r.verdict == oil_core::models::Tier::HighRisk {
+                                if lang.is_turkish() {
+                                    "[ZARARLI YÜKLEYİCİ]".red().bold()
+                                } else {
+                                    "[HOSTILE LOADER]".red().bold()
+                                }
+                            } else if is_signed {
+                                if lang.is_turkish() {
+                                    "[İMZALI]".cyan().bold()
+                                } else {
+                                    "[VENDOR SIGNED]".cyan().bold()
+                                }
+                            } else if lang.is_turkish() {
+                                "[İMZASIZ ANOMALİ]".yellow().bold()
+                            } else {
+                                "[UNSIGNED ANOMALY]".yellow().bold()
+                            };
 
                         println!(
                             "  [{}] {} {} {}",
@@ -570,24 +732,31 @@ fn handle_post_scan_navigation(
                             priority_badge,
                             r.identity.path.display().to_string().bold()
                         );
-                        let (en_reason, tr_reason) = if r.verdict_summary.contains("Untrusted Sideloading Loader")
+                        let (en_reason, tr_reason) = if r
+                            .verdict_summary
+                            .contains("Untrusted Sideloading Loader")
                             || r.verdict_summary.contains("Local Hook")
                         {
                             (
                                 "Local Hook: Unsigned proxy DLL paired with loader (zero network, possible license hook).",
-                                "Yerel Kanca: İmzasız proxy DLL ve loader ikilisi (sıfır ağ, olası lisans baypası)."
+                                "Yerel Kanca: İmzasız proxy DLL ve loader ikilisi (sıfır ağ, olası lisans kancası)."
                             )
                         } else if r.verdict_summary.contains("Hostile DLL Sideloading Suite") {
                             (
                                 "Hostile Sideloading Suite: Unsigned proxy DLL paired with hostile loader (network/injection IOCs).",
                                 "Zararlı Yan Yükleme: İmzasız proxy DLL ve zararlı loader ikilisi (ağ/enjeksiyon IOC)."
                             )
-                        } else if r.verdict_summary.contains("search-order hijacking") || r.verdict_summary.contains("proxy hook") {
+                        } else if r.verdict_summary.contains("search-order hijacking")
+                            || r.verdict_summary.contains("proxy hook")
+                        {
                             (
                                 "Windows system DLL shadowing / proxy hook (e.g. shadows 'version.dll').",
                                 "Sistem DLL gölgeleme / proxy hook ('version.dll' sistem kütüphanesini taklit ediyor)."
                             )
-                        } else if r.verdict_summary.contains("Process injection APIs paired with outbound network") {
+                        } else if r
+                            .verdict_summary
+                            .contains("Process injection APIs paired with outbound network")
+                        {
                             (
                                 "Hostile capability combo: Process injection APIs paired with outbound network.",
                                 "Şüpheli yetenek kombinasyonu: Süreç enjeksiyon API'leri ve dış ağ bağlantısı."
@@ -602,42 +771,72 @@ fn handle_post_scan_navigation(
                                 "Codeless encrypted payload carrier (no executable code section).",
                                 "Kodsuz şifreli veri taşıyıcı (kod bölümü yok, saf payload konteyneri)."
                             )
-                        } else if r.verdict_summary.contains("High-entropy section detected within valid binary") || r.verdict_summary.contains("Near-maximal section entropy") {
+                        } else if r
+                            .verdict_summary
+                            .contains("High-entropy section detected within valid binary")
+                            || r.verdict_summary.contains("Near-maximal section entropy")
+                        {
                             (
                                 "High-entropy section (embedded encrypted payload or packer).",
                                 "Bölüm içinde yüksek entropi (gömülü sıkıştırılmış veri veya lisans)."
                             )
                         } else {
-                            (r.verdict_summary.as_str(), "")
+                            (r.verdict_summary.as_str(), r.verdict_summary.as_str())
                         };
 
-                        println!("      -> {}", en_reason);
-                        if !tr_reason.is_empty() {
-                            println!("         {}", format!("({})", tr_reason).dimmed());
-                        }
+                        let reason = if lang.is_turkish() {
+                            tr_reason
+                        } else {
+                            en_reason
+                        };
+                        println!("      -> {}", reason);
                     }
-                    println!("{}", "───────────────────────────────────────────────────────────────".yellow());
                     println!(
-                        "Enter file number for deep autopsy [1-{}]: {}",
-                        flagged_reports.len(),
-                        format!("(Detaylı otopsi için dosya no)").dimmed()
+                        "{}",
+                        "───────────────────────────────────────────────────────────────".yellow()
                     );
-                    println!("{}", "(Press Enter to go back / Geri dönmek için Enter)".dimmed());
-                    print!("{} / {}: ", "File #".bold(), "Dosya No >".dimmed());
+                    if lang.is_turkish() {
+                        println!(
+                            "Detaylı otopsi için dosya no [1-{}]: (Geri dönmek için Enter)",
+                            flagged_reports.len()
+                        );
+                        print!("{} ", "Dosya No >".bold());
+                    } else {
+                        println!(
+                            "Enter file number for deep autopsy [1-{}]: (Press Enter to go back)",
+                            flagged_reports.len()
+                        );
+                        print!("{} ", "File # >".bold());
+                    }
                     let _ = std::io::stdout().flush();
                     let mut num_str = String::new();
                     let _ = std::io::stdin().read_line(&mut num_str);
                     if let Ok(num) = num_str.trim().parse::<usize>() {
                         if num >= 1 && num <= flagged_reports.len() {
                             println!();
-                            println!("{}", "───────────────────────────────────────────────────────────────".cyan());
                             println!(
-                                "  FILE AUTOPSY DOSSIER [#{}] / {}: {}",
-                                num,
-                                format!("DOSYA DETAYI").dimmed(),
-                                flagged_reports[num - 1].identity.path.display()
+                                "{}",
+                                "───────────────────────────────────────────────────────────────"
+                                    .cyan()
                             );
-                            println!("{}", "───────────────────────────────────────────────────────────────".cyan());
+                            if lang.is_turkish() {
+                                println!(
+                                    "  DOSYA DETAY OTOPSİSİ [#{}] - {}",
+                                    num,
+                                    flagged_reports[num - 1].identity.path.display()
+                                );
+                            } else {
+                                println!(
+                                    "  FILE AUTOPSY DOSSIER [#{}] - {}",
+                                    num,
+                                    flagged_reports[num - 1].identity.path.display()
+                                );
+                            }
+                            println!(
+                                "{}",
+                                "───────────────────────────────────────────────────────────────"
+                                    .cyan()
+                            );
                             output::print_dossier(flagged_reports[num - 1]);
                         }
                     }
@@ -645,19 +844,44 @@ fn handle_post_scan_navigation(
             }
             "2" => {
                 println!();
-                println!("{}", "───────────────────────────────────────────────────────────────".cyan());
                 println!(
-                    "  ALL SCANNED FILES COMPACT STATUS ({} files) {}",
-                    total,
-                    format!("// Taranan Tüm Dosyalar").dimmed()
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".cyan()
                 );
-                println!("{}", "───────────────────────────────────────────────────────────────".cyan());
+                if lang.is_turkish() {
+                    println!("  TARANAN TÜM DOSYALAR ({} dosya)", total);
+                } else {
+                    println!("  ALL SCANNED FILES COMPACT STATUS ({} files)", total);
+                }
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".cyan()
+                );
                 for (idx, r) in reports.iter().enumerate() {
-                    let badge = match r.verdict {
-                        oil_core::models::Tier::HighRisk => format!("{} {}", "[!] [HIGH RISK]".red().bold(), format!("[YÜKSEK RİSK]").red().dimmed()),
-                        oil_core::models::Tier::Suspicious => format!("{} {}", "[!] [SUSPICIOUS]".yellow().bold(), format!("[ŞÜPHELİ]").yellow().dimmed()),
-                        oil_core::models::Tier::NoIndicatorsFound => format!("{} {}", "[+] [NO INDICATORS]".green().bold(), format!("[BELİRTİSİZ]").green().dimmed()),
-                        oil_core::models::Tier::Inconclusive => format!("{} {}", "[-] [INCONCLUSIVE]".magenta().bold(), format!("[KARARSIZ]").magenta().dimmed()),
+                    let badge = if lang.is_turkish() {
+                        match r.verdict {
+                            oil_core::models::Tier::HighRisk => "[!] [YÜKSEK RİSK]".red().bold(),
+                            oil_core::models::Tier::Suspicious => "[!] [ŞÜPHELİ]".yellow().bold(),
+                            oil_core::models::Tier::NoIndicatorsFound => {
+                                "[+] [GÖSTERGE BULUNAMADI]".green().bold()
+                            }
+                            oil_core::models::Tier::Inconclusive => {
+                                "[-] [KARARSIZ]".magenta().bold()
+                            }
+                        }
+                    } else {
+                        match r.verdict {
+                            oil_core::models::Tier::HighRisk => "[!] [HIGH RISK]".red().bold(),
+                            oil_core::models::Tier::Suspicious => {
+                                "[!] [SUSPICIOUS]".yellow().bold()
+                            }
+                            oil_core::models::Tier::NoIndicatorsFound => {
+                                "[+] [NO INDICATORS FOUND]".green().bold()
+                            }
+                            oil_core::models::Tier::Inconclusive => {
+                                "[-] [INCONCLUSIVE]".magenta().bold()
+                            }
+                        }
                     };
                     let fname = r
                         .identity
@@ -667,7 +891,10 @@ fn handle_post_scan_navigation(
                         .unwrap_or("?");
                     println!("  {:3}. {} {}", idx + 1, badge, fname);
                 }
-                println!("{}", "───────────────────────────────────────────────────────────────".cyan());
+                println!(
+                    "{}",
+                    "───────────────────────────────────────────────────────────────".cyan()
+                );
             }
             "3" => {
                 print!("\x1B[2J\x1B[1;1H");
@@ -682,54 +909,56 @@ fn handle_post_scan_navigation(
                     proxy_hook_count,
                     duplicate_count,
                     has_stealer_ioc,
+                    lang,
                 );
             }
             _ => {
-                println!(
-                    "Invalid choice. Enter [1-4] {}.",
-                    format!("(Geçersiz seçim. [1-4] arasında bir numara giriniz.)").dimmed()
-                );
+                if lang.is_turkish() {
+                    println!("Geçersiz seçim. [1-4] arasında bir numara giriniz.");
+                } else {
+                    println!("Invalid choice. Enter a number between 1 and 4.");
+                }
             }
         }
         println!();
     }
 }
 
-fn run_diff(original: &Path, patched: &Path) -> bool {
+fn run_diff(original: &Path, patched: &Path, lang: Language) -> bool {
     if !original.exists() {
-        eprintln!(
-            "Error: Original binary not found / {}: {}",
-            "Orijinal dosya bulunamadı".dimmed(),
-            original.display()
-        );
+        if lang.is_turkish() {
+            eprintln!("Hata: Orijinal dosya bulunamadı: {}", original.display());
+        } else {
+            eprintln!("Error: Original binary not found: {}", original.display());
+        }
         return false;
     }
     if !patched.exists() {
-        eprintln!(
-            "Error: Patched binary not found / {}: {}",
-            "Yamalı dosya bulunamadı".dimmed(),
-            patched.display()
-        );
+        if lang.is_turkish() {
+            eprintln!("Hata: Yamalı dosya bulunamadı: {}", patched.display());
+        } else {
+            eprintln!("Error: Patched binary not found: {}", patched.display());
+        }
         return false;
     }
 
     match oil_core::diff::diff_binaries(original, patched) {
         Ok(report) => {
-            output::print_diff_dossier(&report);
+            output::print_diff_dossier(&report, lang);
             true
         }
         Err(e) => {
-            eprintln!(
-                "Error: Binary diff analysis failed / {}: {}",
-                "İkili yama analizi başarısız".dimmed(),
-                e
-            );
+            if lang.is_turkish() {
+                eprintln!("Hata: İkili yama analizi başarısız: {}", e);
+            } else {
+                eprintln!("Error: Binary diff analysis failed: {}", e);
+            }
             false
         }
     }
 }
 
-fn run_hunt(dir: Option<PathBuf>) {
+fn run_hunt(dir: Option<PathBuf>, lang: Language) {
     let mut report = oil_core::hunt::run_persistence_audit();
     if let Some(d) = dir {
         if d.exists() && d.is_dir() {
@@ -740,7 +969,9 @@ fn run_hunt(dir: Option<PathBuf>) {
                     match scan.verdict {
                         oil_core::models::Tier::HighRisk => report.high_risk_count += 1,
                         oil_core::models::Tier::Suspicious => report.suspicious_count += 1,
-                        oil_core::models::Tier::NoIndicatorsFound => report.no_indicators_count += 1,
+                        oil_core::models::Tier::NoIndicatorsFound => {
+                            report.no_indicators_count += 1
+                        }
                         oil_core::models::Tier::Inconclusive => {}
                     }
                 }
@@ -748,39 +979,183 @@ fn run_hunt(dir: Option<PathBuf>) {
             }
         }
     }
-    output::print_hunt_dossier(&report);
+    output::print_hunt_dossier(&report, lang);
 }
 
-fn print_menu() {
+fn print_pumpjack_banner(lang: Language) {
+    println!(
+        "{}",
+        "──────────────────────────────────────────────────────────────────────────────────".cyan()
+    );
+    if lang.is_turkish() {
+        println!(
+            "{}{}",
+            "             .---.                    ".cyan(),
+            "OIL // GÜVENLİK, MOD & YAMA ANALİZİ (v0.1.0)".bold()
+        );
+        println!(
+            "{}{}",
+            "            /     \\========[+]        ".cyan(),
+            "Mod, Crack & İkili Dosya İnceleme Motoru".dimmed()
+        );
+        println!(
+            "{}{}",
+            "      __   /   o   \\        |         ".cyan(),
+            "Zararlı Yazılım & DLL Kancası Tespiti".dimmed()
+        );
+        println!(
+            "{}{}",
+            "     |  | /_________\\       |         ".cyan(),
+            "Sıfır Bulut Bağımlılığı • Bellek İçi Analiz".dimmed()
+        );
+        println!(
+            "{}{}",
+            "     |  |     | |           |         ".cyan(),
+            "Çevrimdışı Çalışma • Fail-Closed Model".dimmed()
+        );
+        println!("{}", "    /|  |\\   /   \\         / \\".cyan());
+    } else {
+        println!(
+            "{}{}",
+            "             .---.                    ".cyan(),
+            "OIL // BINARY, MOD & PATCH SECURITY (v0.1.0)".bold()
+        );
+        println!(
+            "{}{}",
+            "            /     \\========[+]        ".cyan(),
+            "Mod, Crack & Binary Inspection Engine".dimmed()
+        );
+        println!(
+            "{}{}",
+            "      __   /   o   \\        |         ".cyan(),
+            "Malware & DLL Sideloading Detection".dimmed()
+        );
+        println!(
+            "{}{}",
+            "     |  | /_________\\       |         ".cyan(),
+            "Zero Cloud Dependency • In-Memory Analysis".dimmed()
+        );
+        println!(
+            "{}{}",
+            "     |  |     | |           |         ".cyan(),
+            "Offline Execution • Fail-Closed Model".dimmed()
+        );
+        println!("{}", "    /|  |\\   /   \\         / \\".cyan());
+    }
+    println!(
+        "{}",
+        "──────────────────────────────────────────────────────────────────────────────────".cyan()
+    );
+}
+
+fn print_menu(lang: Language) {
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════════════".cyan());
-    println!("{}", "   OIL // Binary Forensic Triage & Semantic Patch Engine (v0.1.0)".bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════════════".cyan());
+    print_pumpjack_banner(lang);
     println!();
-    println!("Select an action or paste a target file/folder path directly:");
-    println!("{}", "İşlem seçin veya taranacak dosya/klasör yolunu doğrudan yapıştırın:\n".dimmed());
-    println!("  {} Scan File or Folder {}", "[1]".green().bold(), format!("/ Dosya veya Klasör Tara").dimmed());
-    println!("  {} Windows Persistence & Proxy DLL Audit {}", "[2]".green().bold(), format!("/ Kalıcılık & DLL Denetimi").dimmed());
-    println!("  {} Semantic Patch Diff {}", "[3]".green().bold(), format!("/ İki Dosyayı Semantik Karşılaştır").dimmed());
-    println!("  {} Benchmark Lab Suite {}", "[4]".green().bold(), format!("/ Dahili Test Laboratuvarı").dimmed());
-    println!("  {} Exit {}\n", "[5]".dimmed(), format!("/ Çıkış").dimmed());
-    println!("{}", "Hint: Drag and drop any file or folder directly into this window!".yellow());
-    println!("{}", "İpucu: Herhangi bir dosyayı doğrudan bu pencereye sürükleyip bırakabilirsiniz.".yellow().dimmed());
+    if lang.is_turkish() {
+        println!(
+            "  {}",
+            "────────────────────────────────────────────────────────────────────────────".dimmed()
+        );
+        println!(
+            "  {}  {}",
+            "[1]".green().bold(),
+            "Dosya veya klasör tara".bold()
+        );
+        println!(
+            "       {}",
+            "Bir .exe, .dll, .zip veya klasörü sürükle/yapıştır, ne olduğunu öğren.".dimmed()
+        );
+        println!();
+        println!(
+            "  {}  {}",
+            "[2]".green().bold(),
+            "Bilgisayarımda gizli tehdit var mı?".bold()
+        );
+        println!(
+            "       {}",
+            "Windows başlangıcına ve sistem klasörlerine yerleşmiş şüpheli dosyaları bul.".dimmed()
+        );
+        println!();
+        println!(
+            "  {}  {}",
+            "[3]".green().bold(),
+            "Orijinal ile crack farkını göster".bold()
+        );
+        println!(
+            "       {}",
+            "Orijinal dosya ile yamalı/kırılmış dosyayı karşılaştır, neyin değiştiğini gör."
+                .dimmed()
+        );
+        println!();
+        println!("  {}  {}", "[4]".dimmed(), "Çıkış".dimmed());
+        println!(
+            "  {}",
+            "────────────────────────────────────────────────────────────────────────────".dimmed()
+        );
+        println!();
+        println!(
+            "  {}",
+            "İpucu: Dosya veya klasörü doğrudan bu pencereye sürükleyip bırakabilirsiniz.".yellow()
+        );
+    } else {
+        println!(
+            "  {}",
+            "────────────────────────────────────────────────────────────────────────────".dimmed()
+        );
+        println!(
+            "  {}  {}",
+            "[1]".green().bold(),
+            "Scan a file or folder".bold()
+        );
+        println!(
+            "       {}",
+            "Drag/paste any .exe, .dll, .zip or folder to find out what's inside.".dimmed()
+        );
+        println!();
+        println!(
+            "  {}  {}",
+            "[2]".green().bold(),
+            "Check my PC for hidden threats".bold()
+        );
+        println!(
+            "       {}",
+            "Find suspicious files planted in Windows startup or system folders.".dimmed()
+        );
+        println!();
+        println!(
+            "  {}  {}",
+            "[3]".green().bold(),
+            "Compare original vs. cracked file".bold()
+        );
+        println!(
+            "       {}",
+            "See exactly what changed between the original and the patched/cracked version."
+                .dimmed()
+        );
+        println!();
+        println!("  {}  {}", "[4]".dimmed(), "Exit".dimmed());
+        println!(
+            "  {}",
+            "────────────────────────────────────────────────────────────────────────────".dimmed()
+        );
+        println!();
+        println!(
+            "  {}",
+            "Hint: Drag and drop any file or folder directly into this window!".yellow()
+        );
+    }
     println!();
 }
 
-fn run_interactive_mode() {
+fn run_interactive_mode(lang: Language) {
     use colored::Colorize;
     use std::io::{stdin, stdout, Write};
 
-    print_menu();
+    print_menu(lang);
 
     loop {
-        print!(
-            "{} / {}: ",
-            "Choice or File Path".green().bold(),
-            "Seçim veya Dosya Yolu >".green().dimmed()
-        );
+        print!("  {} ❯ ", "oil".green().bold());
         let _ = stdout().flush();
 
         let mut line = String::new();
@@ -794,80 +1169,112 @@ fn run_interactive_mode() {
             continue;
         }
 
-        if trimmed == "5" || trimmed.eq_ignore_ascii_case("q") || trimmed.eq_ignore_ascii_case("exit") {
-            println!("Exiting Oil... {}", "(Sonlandırılıyor)".dimmed());
+        if trimmed == "4"
+            || trimmed.eq_ignore_ascii_case("q")
+            || trimmed.eq_ignore_ascii_case("exit")
+        {
+            if lang.is_turkish() {
+                println!("  Oil kapatılıyor...");
+            } else {
+                println!("  Exiting Oil...");
+            }
             break;
         }
 
-        if trimmed.eq_ignore_ascii_case("help") || trimmed.eq_ignore_ascii_case("m") || trimmed.eq_ignore_ascii_case("menu") {
-            print_menu();
+        if trimmed.eq_ignore_ascii_case("help")
+            || trimmed.eq_ignore_ascii_case("m")
+            || trimmed.eq_ignore_ascii_case("menu")
+        {
+            print_menu(lang);
             continue;
         }
 
         match trimmed {
             "1" => {
-                print!(
-                    "Drag/paste target path / {}: ",
-                    "Taranacak dosya/klasör yolunu girin".dimmed()
-                );
+                if lang.is_turkish() {
+                    print!(
+                        "  {} ❯ ",
+                        "Taranacak hedef yol (dosya / klasör)".cyan().bold()
+                    );
+                } else {
+                    print!("  {} ❯ ", "Target path (file / folder)".cyan().bold());
+                }
                 let _ = stdout().flush();
                 let mut p_str = String::new();
                 let _ = stdin().read_line(&mut p_str);
                 if let Some(path) = clean_input_path(&p_str) {
-                    run_scan(&path);
+                    run_scan(&path, lang);
+                } else if lang.is_turkish() {
+                    eprintln!("  Hata: Geçersiz veya boş dosya yolu.");
                 } else {
-                    eprintln!(
-                        "Error: Invalid or empty path / {}",
-                        "Hata: Geçersiz veya boş dosya yolu.".dimmed()
-                    );
+                    eprintln!("  Error: Invalid or empty path.");
                 }
             }
             "2" => {
-                println!(
-                    "\nAuditing Windows persistence points & proxy DLL hooks... {}\n",
-                    "(Kalıcılık noktaları ve kancalar denetleniyor)".dimmed()
-                );
-                run_hunt(None);
+                if lang.is_turkish() {
+                    println!("\n  Bilgisayarda gizli tehditler aranıyor...\n");
+                } else {
+                    println!("\n  Scanning for hidden threats on this PC...\n");
+                }
+                run_hunt(None, lang);
             }
             "3" => {
-                print!(
-                    "\nOriginal binary path / {}: ",
-                    "Orijinal dosya yolu".dimmed()
-                );
-                let _ = stdout().flush();
-                let mut o_str = String::new();
-                let _ = stdin().read_line(&mut o_str);
-                let orig = clean_input_path(&o_str);
+                if lang.is_turkish() {
+                    print!("\n  {} ❯ ", "Orijinal dosya yolu".cyan().bold());
+                    let _ = stdout().flush();
+                    let mut o_str = String::new();
+                    let _ = stdin().read_line(&mut o_str);
+                    let orig = clean_input_path(&o_str);
 
-                print!(
-                    "Patched binary path / {}: ",
-                    "Yamalı dosya yolu".dimmed()
-                );
-                let _ = stdout().flush();
-                let mut p_str = String::new();
-                let _ = stdin().read_line(&mut p_str);
-                let patched = clean_input_path(&p_str);
+                    print!("  {} ❯ ", "Yamalı / crack dosya yolu".cyan().bold());
+                    let _ = stdout().flush();
+                    let mut p_str = String::new();
+                    let _ = stdin().read_line(&mut p_str);
+                    let patched = clean_input_path(&p_str);
 
-                if let (Some(o), Some(p)) = (orig, patched) {
-                    run_diff(&o, &p);
+                    if let (Some(o), Some(p)) = (orig, patched) {
+                        run_diff(&o, &p, lang);
+                    } else {
+                        eprintln!("  Hata: Dosya yolları geçerli değil.");
+                    }
                 } else {
-                    eprintln!(
-                        "Error: Invalid file paths / {}",
-                        "Hata: Dosya yolları geçerli değil.".dimmed()
-                    );
+                    print!("\n  {} ❯ ", "Original binary path".cyan().bold());
+                    let _ = stdout().flush();
+                    let mut o_str = String::new();
+                    let _ = stdin().read_line(&mut o_str);
+                    let orig = clean_input_path(&o_str);
+
+                    print!("  {} ❯ ", "Patched / cracked binary path".cyan().bold());
+                    let _ = stdout().flush();
+                    let mut p_str = String::new();
+                    let _ = stdin().read_line(&mut p_str);
+                    let patched = clean_input_path(&p_str);
+
+                    if let (Some(o), Some(p)) = (orig, patched) {
+                        run_diff(&o, &p, lang);
+                    } else {
+                        eprintln!("  Error: Invalid file paths.");
+                    }
                 }
             }
-            "4" => {
+            // Hidden developer command — not shown in menu
+            "lab" => {
                 output::run_lab_suite();
             }
             user_input => {
                 // Drag & drop or direct path typed
                 if let Some(path) = clean_input_path(user_input) {
-                    run_scan(&path);
+                    run_scan(&path, lang);
+                } else if lang.is_turkish() {
+                    println!(
+                        "  {} {}",
+                        format!("Geçersiz seçim: '{}'.", user_input).red(),
+                        "Menü: 'm' / 'help'".dimmed()
+                    );
                 } else {
                     println!(
-                        "{} {}",
-                        format!("Invalid choice / Geçersiz seçim: '{}'.", user_input).red(),
+                        "  {} {}",
+                        format!("Invalid choice: '{}'.", user_input).red(),
                         "Menu: 'm' / 'help'".dimmed()
                     );
                 }
@@ -880,44 +1287,64 @@ fn run_interactive_mode() {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let detected_lang = Language::detect();
 
     // 1. Drag & Drop onto oil.exe icon in Windows Explorer
     if args.len() >= 2 {
         let first = args[1].trim_matches('"').trim_matches('\'');
         let is_subcommand_or_flag = matches!(
             first,
-            "scan" | "diff" | "hunt" | "lab" | "help" | "-h" | "--help" | "-V" | "--version"
+            "scan"
+                | "diff"
+                | "hunt"
+                | "lab"
+                | "help"
+                | "-h"
+                | "--help"
+                | "-V"
+                | "--version"
+                | "--lang"
         );
 
         if !is_subcommand_or_flag {
-            println!(
-                "OIL // Direct Target Inspection {}\n",
-                "(Drag & Drop Mode / Sürükle & Bırak Modu)".dimmed()
-            );
+            if detected_lang.is_turkish() {
+                println!(
+                    "OIL // Doğrudan Hedef İncelemesi {}\n",
+                    "(Sürükle & Bırak Modu)".dimmed()
+                );
+            } else {
+                println!(
+                    "OIL // Direct Target Inspection {}\n",
+                    "(Drag & Drop Mode)".dimmed()
+                );
+            }
             for arg in &args[1..] {
                 if let Some(candidate) = clean_input_path(arg) {
-                    run_scan(&candidate);
+                    run_scan(&candidate, detected_lang);
                 }
             }
-            println!(
-                "\n[Scan complete. Drag another file or press Enter to exit / {}]",
-                "Tarama tamamlandı. Enter: Çıkış".dimmed()
-            );
-            print!(
-                "{} / {}: ",
-                "Choice or File Path (Enter: Exit)".green().bold(),
-                "Seçim veya Dosya Yolu >".green().dimmed()
-            );
+            if detected_lang.is_turkish() {
+                println!(
+                    "\n[Tarama tamamlandı. Başka bir dosya sürükleyin veya çıkmak için Enter'a basın]"
+                );
+                print!(
+                    "{}: ",
+                    "Seçim veya Dosya Yolu (Enter: Çıkış)".green().bold()
+                );
+            } else {
+                println!("\n[Scan complete. Drag another file or press Enter to exit]");
+                print!("{}: ", "Choice or File Path (Enter: Exit)".green().bold());
+            }
             let _ = std::io::stdout().flush();
             let mut buf = String::new();
             if std::io::stdin().read_line(&mut buf).is_ok() {
                 let trimmed = buf.trim();
                 if !trimmed.is_empty() && trimmed != "q" && trimmed != "5" && trimmed != "exit" {
                     if let Some(next_candidate) = clean_input_path(trimmed) {
-                        run_scan(&next_candidate);
+                        run_scan(&next_candidate, detected_lang);
                     }
                     // Transition directly into continuous interactive mode
-                    run_interactive_mode();
+                    run_interactive_mode(detected_lang);
                 }
             }
             return;
@@ -926,29 +1353,56 @@ fn main() {
 
     // 2. Direct double-click without arguments
     if args.len() <= 1 {
-        run_interactive_mode();
+        run_interactive_mode(detected_lang);
         return;
     }
 
     // 3. Standard CLI invocation
     let cli = Cli::parse();
+    let lang = Language::resolve(cli.lang.as_deref());
 
     match cli.command {
-        Commands::Scan { path } => {
-            if !run_scan(&path) {
+        Some(Commands::Scan { path }) => {
+            if !run_scan(&path, lang) {
                 std::process::exit(1);
             }
         }
-        Commands::Diff { original, patched } => {
-            if !run_diff(&original, &patched) {
+        Some(Commands::Diff { original, patched }) => {
+            if !run_diff(&original, &patched, lang) {
                 std::process::exit(1);
             }
         }
-        Commands::Hunt { dir } => {
-            run_hunt(dir);
+        Some(Commands::Hunt { dir }) => {
+            run_hunt(dir, lang);
         }
-        Commands::Lab => {
+        Some(Commands::Lab) => {
             output::run_lab_suite();
         }
+        None => {
+            run_interactive_mode(lang);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_print_pumpjack_banner_no_panic() {
+        print_pumpjack_banner(Language::Turkish);
+        print_pumpjack_banner(Language::English);
+    }
+
+    #[test]
+    fn test_clean_input_path() {
+        assert_eq!(clean_input_path(""), None);
+        assert_eq!(clean_input_path("   "), None);
+        assert_eq!(clean_input_path("invalid_choice_no_extension"), None);
+        assert!(clean_input_path("Cargo.toml").is_some());
+        assert_eq!(
+            clean_input_path("& 'C:\\path\\file.exe'"),
+            Some(PathBuf::from("C:\\path\\file.exe"))
+        );
     }
 }

@@ -4,9 +4,7 @@
 //! Zero-copy PE parsing: sections, entropy, overlay, imports, exports.
 
 use crate::io::shannon_entropy;
-use crate::models::{
-    Evidence, EvidenceKind, ImportEntry, PeAutopsy, SectionInfo,
-};
+use crate::models::{Evidence, EvidenceKind, ImportEntry, PeAutopsy, SectionInfo};
 use goblin::pe::PE;
 
 /// Known networking DLLs that should not appear in offline utilities.
@@ -28,11 +26,7 @@ const INJECTION_APIS: &[&str] = &[
 ];
 
 /// Known credential/crypto APIs.
-const CREDENTIAL_APIS: &[&str] = &[
-    "CryptUnprotectData",
-    "CertOpenStore",
-    "CertOpenSystemStore",
-];
+const CREDENTIAL_APIS: &[&str] = &["CryptUnprotectData", "CertOpenStore", "CertOpenSystemStore"];
 
 /// Minimum import set that suggests a crypter stub.
 const CRYPTER_MINIMAL_IMPORTS: &[&str] = &[
@@ -48,14 +42,242 @@ const HIGH_ENTROPY_THRESHOLD: f64 = 7.5;
 
 /// Known packer or crypter section name prefixes.
 const PACKER_SECTION_PREFIXES: &[&str] = &[
-    "upx", "wus", "mpress", "aspack", "themida", "vmp", "pec", "nsp", "fsg", "mew", "pack", "baymax",
+    "upx", "wus", "mpress", "aspack", "themida", "vmp", "pec", "nsp", "fsg", "mew", "pack",
+    "baymax",
 ];
 
 /// Checks if a section name matches known packer/crypter signatures.
 fn is_packer_section_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     let trimmed = lower.trim_start_matches('.').trim();
-    PACKER_SECTION_PREFIXES.iter().any(|&p| trimmed.starts_with(p))
+    PACKER_SECTION_PREFIXES
+        .iter()
+        .any(|&p| trimmed.starts_with(p))
+}
+
+/// Core Steamworks C-API export names.
+pub const STEAMWORKS_CORE_EXPORTS: &[&str] = &[
+    "SteamAPI_Init",
+    "SteamAPI_Shutdown",
+    "SteamAPI_RestartAppIfNecessary",
+    "SteamAPI_ReleaseCurrentThreadMemory",
+    "SteamAPI_RunCallbacks",
+    "SteamAPI_IsSteamRunning",
+    "SteamClient",
+    "SteamUser",
+    "SteamFriends",
+    "SteamUtils",
+    "SteamMatchmaking",
+    "SteamUserStats",
+    "SteamApps",
+    "SteamNetworking",
+    "SteamRemoteStorage",
+    "SteamScreenshots",
+    "SteamHTTP",
+    "SteamController",
+    "SteamUGC",
+    "SteamInput",
+    "SteamGameServer_Init",
+    "SteamGameServer_Shutdown",
+    "SteamGameServer_RunCallbacks",
+    "CreateInterface",
+    "SteamInternal_CreateInterface",
+    "SteamInternal_ContextInit",
+];
+
+/// Core Epic Online Services (EOS) C-API export names.
+pub const EOS_CORE_EXPORTS: &[&str] = &[
+    "EOS_Initialize",
+    "EOS_Shutdown",
+    "EOS_Platform_Create",
+    "EOS_Platform_Release",
+    "EOS_Platform_Tick",
+    "EOS_Platform_GetEcomInterface",
+    "EOS_Platform_GetAuthInterface",
+    "EOS_Platform_GetConnectInterface",
+    "EOS_Platform_GetAchievementsInterface",
+    "EOS_Platform_GetFriendsInterface",
+    "EOS_Platform_GetUserInfoInterface",
+    "EOS_Platform_GetPresenceInterface",
+    "EOS_Platform_GetStatsInterface",
+    "EOS_Platform_GetLeaderboardsInterface",
+    "EOS_Platform_GetMetricsInterface",
+    "EOS_Platform_GetPlayerDataStorageInterface",
+    "EOS_Platform_GetTitleStorageInterface",
+    "EOS_Platform_GetUIInterface",
+    "EOS_Platform_GetP2PInterface",
+    "EOS_Platform_GetSessionsInterface",
+    "EOS_Platform_GetLobbyInterface",
+    "EOS_Platform_GetAntiCheatClientInterface",
+    "EOS_Platform_GetAntiCheatServerInterface",
+    "EOS_EResult_ToString",
+    "EOS_ByteArray_ToString",
+    "EOS_Logging_SetCallback",
+];
+
+/// Detects gaming platform / Steam / Epic Online Services emulator profile (e.g. Goldberg, ColdAPI, ScreamAPI, Nemirtingas).
+///
+/// An emulator binary typically:
+/// 1. Exports multiple Steamworks or EOS C-API functions (or sits behind a proxy hook).
+/// 2. Contains specific configuration and redirection string anchors (`steam_settings`,
+///    `EOS_settings`, `ScreamAPI`, `NemirtingasEpicEmu`, `epic_emu.ini`, `disable_networking`, etc.).
+pub fn detect_emulator_profile(exports: &[String], data: &[u8]) -> Option<Evidence> {
+    use aho_corasick::{AhoCorasick, MatchKind};
+    use std::sync::OnceLock;
+
+    static SCANNER: OnceLock<AhoCorasick> = OnceLock::new();
+    let scanner = SCANNER.get_or_init(|| {
+        let patterns = &[
+            // Steam / Goldberg / ColdAPI (0..=9)
+            "steam_settings",
+            "steam_interfaces.txt",
+            "steam_appid.txt",
+            "disable_networking",
+            "local_save",
+            "goldberg",
+            "coldapi",
+            "coldstorage",
+            "smartsteamemu",
+            "steam_emu.ini",
+            // Epic Games / EOS / ScreamAPI / Nemirtingas (10..=17)
+            "eos_settings",
+            "epic_emu.ini",
+            "nemirtingasepicemu",
+            "screamapi",
+            "acidicoala",
+            "koaloader",
+            "eos_interfaces.txt",
+            "_o.dll",
+            // Generic author markers (18)
+            "nemirtingas",
+        ];
+        AhoCorasick::builder()
+            .ascii_case_insensitive(true)
+            .match_kind(MatchKind::Standard)
+            .build(patterns)
+            .expect("Valid emulator patterns")
+    });
+
+    let mut matched_indices = std::collections::BTreeSet::new();
+    for mat in scanner.find_iter(data) {
+        matched_indices.insert(mat.pattern().as_usize());
+    }
+
+    let mut indicators = Vec::new();
+    for &idx in &matched_indices {
+        let desc = match idx {
+            0 => "Goldberg/Generic 'steam_settings' configuration folder reference",
+            1 => "Steamworks interface definition file ('steam_interfaces.txt')",
+            2 => "Steam AppID configuration hook ('steam_appid.txt')",
+            3 => "Goldberg 'disable_networking' offline lock",
+            4 => "Goldberg local offline save redirection ('local_save')",
+            5 => "Goldberg Steam Emulator binary stamp",
+            6 => "ColdAPI Steam Emulator marker",
+            7 => "ColdAPI local storage redirection ('ColdStorage')",
+            8 => "SmartSteamEmu emulator marker",
+            9 => "ALI213/CODEX configuration file ('steam_emu.ini')",
+            10 => "Epic Online Services 'EOS_settings' configuration folder reference",
+            11 => "Epic Emulator configuration file ('epic_emu.ini')",
+            12 => "Nemirtingas Epic Emulator metadata ('NemirtingasEpicEmu')",
+            13 => "ScreamAPI (Epic Online Services DLC unlocker) marker",
+            14 => "Acidicoala (ScreamAPI / Koaloader author) signature",
+            15 => "Koaloader universal proxy hook signature",
+            16 => "EOS interface definition file ('eos_interfaces.txt')",
+            17 => "Proxy DLL redirection target marker ('_o.dll')",
+            18 => "Nemirtingas emulator marker",
+            _ => "Unknown emulator marker",
+        };
+        indicators.push(desc.to_string());
+    }
+
+    let steam_export_matches = exports
+        .iter()
+        .filter(|exp| {
+            exp.starts_with("SteamAPI_")
+                || exp.starts_with("SteamInternal_")
+                || exp.starts_with("SteamGameServer_")
+                || STEAMWORKS_CORE_EXPORTS.contains(&exp.as_str())
+        })
+        .count();
+
+    if steam_export_matches > 0 {
+        indicators.push(format!(
+            "Exports {} Steamworks C-API functions",
+            steam_export_matches
+        ));
+    }
+
+    let eos_export_matches = exports
+        .iter()
+        .filter(|exp| exp.starts_with("EOS_") || EOS_CORE_EXPORTS.contains(&exp.as_str()))
+        .count();
+
+    if eos_export_matches > 0 {
+        indicators.push(format!(
+            "Exports {} Epic Online Services (EOS) C-API functions",
+            eos_export_matches
+        ));
+    }
+
+    // Qualify as emulator profile:
+    // 1. Steamworks profile: >=3 Steam exports OR (>=1 Steam export + Steam marker) OR >=2 Steam markers
+    let is_steam_profile = steam_export_matches >= 3
+        || (steam_export_matches >= 1
+            && (matched_indices.range(0..=9).next().is_some() || matched_indices.contains(&18)))
+        || matched_indices.range(0..=9).count() >= 2;
+
+    // 2. EOS profile: >=3 EOS exports OR (>=1 EOS export + EOS marker) OR >=2 EOS markers
+    let is_eos_profile = eos_export_matches >= 3
+        || (eos_export_matches >= 1 && matched_indices.range(10..=17).next().is_some())
+        || matched_indices.range(10..=17).count() >= 2;
+
+    if !is_steam_profile && !is_eos_profile && matched_indices.len() < 2 {
+        return None;
+    }
+
+    let name = if matched_indices.contains(&13) || matched_indices.contains(&14) {
+        "ScreamAPI (Epic DLC Unlocker)".to_string()
+    } else if matched_indices.contains(&12) {
+        "Nemirtingas Epic Games Emulator".to_string()
+    } else if is_eos_profile {
+        if eos_export_matches >= 3 {
+            "Epic Online Services (EOS) Emulator".to_string()
+        } else {
+            "Epic Games Platform Emulator".to_string()
+        }
+    } else if matched_indices.contains(&5)
+        || matched_indices.contains(&3)
+        || matched_indices.contains(&4)
+        || matched_indices.contains(&0)
+    {
+        "Goldberg Steam Emulator".to_string()
+    } else if matched_indices.contains(&6) || matched_indices.contains(&7) {
+        "ColdAPI Steam Emulator".to_string()
+    } else if matched_indices.contains(&8) {
+        "SmartSteamEmu".to_string()
+    } else if matched_indices.contains(&18) {
+        "Nemirtingas Steam Emulator".to_string()
+    } else if matched_indices.contains(&9) {
+        "CODEX/ALI213 Steam Emulator".to_string()
+    } else if steam_export_matches >= 3 {
+        "Steamworks C-API Emulator / Wrapper".to_string()
+    } else {
+        "Gaming Platform Emulator".to_string()
+    };
+
+    Some(Evidence {
+        kind: EvidenceKind::EmulatorProfile {
+            name: name.clone(),
+            is_legitimate: true,
+            indicators: indicators.clone(),
+        },
+        is_threat_signal: false,
+        explanation: format!(
+            "Identified {} with {} forensic indicators. Benign offline gaming emulator profile.",
+            name,
+            indicators.len()
+        ),
+    })
 }
 
 /// Perform a full PE autopsy on raw file bytes.
@@ -83,7 +305,10 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
                 .map(|(_, d)| d.virtual_address > 0 && d.size > 0)
         })
         .unwrap_or(false)
-        || pe.imports.iter().any(|imp| imp.dll.to_lowercase() == "mscoree.dll");
+        || pe
+            .imports
+            .iter()
+            .any(|imp| imp.dll.to_lowercase() == "mscoree.dll");
 
     // — Sections —
     let sections: Vec<SectionInfo> = pe
@@ -131,7 +356,8 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
         if section.entropy > HIGH_ENTROPY_THRESHOLD {
             let is_packer = is_packer_section_name(&section.name);
             let lower_name = section.name.trim().to_lowercase();
-            let is_rsrc = lower_name == ".rsrc" || lower_name.starts_with(".rsrc") || lower_name == "rsrc";
+            let is_rsrc =
+                lower_name == ".rsrc" || lower_name.starts_with(".rsrc") || lower_name == "rsrc";
             let is_extreme_entropy = section.entropy >= 7.95 && !is_rsrc;
 
             // High entropy is an active threat signal if the section contains executable code,
@@ -141,7 +367,11 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
             // in modern games and desktop apps have high entropy naturally without being malicious.
             // In .NET / CLR assemblies, the .text section houses dense CLI metadata streams (#~, #Strings,
             // #US, #Blob), method headers, and IL bytecodes which naturally reach up to 7.85 entropy without packing.
-            let is_threat = if is_clr_binary && !is_packer && section.name == ".text" && section.entropy <= 7.85 {
+            let is_threat = if is_clr_binary
+                && !is_packer
+                && section.name == ".text"
+                && section.entropy <= 7.85
+            {
                 false
             } else {
                 section.executable || is_packer || is_extreme_entropy
@@ -223,10 +453,14 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
     }
 
     // — Imports —
-    let mut import_map: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    let mut import_map: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
     for imp in &pe.imports {
         let dll_name = imp.dll.to_lowercase();
-        import_map.entry(dll_name).or_default().push(imp.name.to_string());
+        import_map
+            .entry(dll_name)
+            .or_default()
+            .push(imp.name.to_string());
     }
 
     let mut imports = Vec::new();
@@ -312,7 +546,10 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
             "High-entropy section present".to_string(),
         ];
         if total_import_count <= 3 {
-            indicators.push(format!("Only {} total imported functions", total_import_count));
+            indicators.push(format!(
+                "Only {} total imported functions",
+                total_import_count
+            ));
         }
         evidence.push(Evidence {
             kind: EvidenceKind::CrypterProfile { indicators },
@@ -329,6 +566,11 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
         .iter()
         .filter_map(|e| e.name.map(|n| n.to_string()))
         .collect();
+
+    // — Gaming Platform / Steam Emulator Profile —
+    if let Some(emu_evidence) = detect_emulator_profile(&exports, data) {
+        evidence.push(emu_evidence);
+    }
 
     // — Overlay (isolating Authenticode Certificate Table to prevent false positives) —
     let last_section_end = pe
@@ -354,11 +596,14 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
         })
         .unwrap_or((0, 0));
 
-    let cert_table_end = if cert_table_offset > 0 && cert_table_size > 0 && cert_table_offset < data.len() as u64 {
-        cert_table_offset.saturating_add(cert_table_size).min(data.len() as u64)
-    } else {
-        0
-    };
+    let cert_table_end =
+        if cert_table_offset > 0 && cert_table_size > 0 && cert_table_offset < data.len() as u64 {
+            cert_table_offset
+                .saturating_add(cert_table_size)
+                .min(data.len() as u64)
+        } else {
+            0
+        };
 
     let image_end = last_section_end.max(cert_table_end);
 
@@ -506,7 +751,10 @@ mod tests {
         let (autopsy, evidence) = result.unwrap();
         assert!(!autopsy.sections[0].executable);
         assert!(autopsy.sections[0].entropy >= 7.95);
-        assert!(evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::HighEntropySection { name, .. } if name == ".rdata") && e.is_threat_signal));
+        assert!(evidence.iter().any(
+            |e| matches!(&e.kind, EvidenceKind::HighEntropySection { name, .. } if name == ".rdata")
+                && e.is_threat_signal
+        ));
     }
 
     #[test]
@@ -525,6 +773,66 @@ mod tests {
         let (autopsy, evidence) = result.unwrap();
         assert!(!autopsy.sections[0].executable);
         assert!(autopsy.sections[0].entropy >= 7.95);
-        assert!(!evidence.iter().any(|e| matches!(&e.kind, EvidenceKind::HighEntropySection { name, .. } if name == ".rsrc") && e.is_threat_signal));
+        assert!(!evidence.iter().any(
+            |e| matches!(&e.kind, EvidenceKind::HighEntropySection { name, .. } if name == ".rsrc")
+                && e.is_threat_signal
+        ));
+    }
+
+    #[test]
+    fn test_detect_emulator_profile_goldberg() {
+        let exports = vec![
+            "SteamAPI_Init".to_string(),
+            "SteamAPI_Shutdown".to_string(),
+            "SteamClient".to_string(),
+        ];
+        let mut data = vec![0u8; 1024];
+        data[100..114].copy_from_slice(b"steam_settings");
+        data[200..220].copy_from_slice(b"steam_interfaces.txt");
+
+        let evidence = detect_emulator_profile(&exports, &data);
+        assert!(evidence.is_some());
+        let ev = evidence.unwrap();
+        if let EvidenceKind::EmulatorProfile {
+            name,
+            is_legitimate,
+            indicators,
+        } = ev.kind
+        {
+            assert_eq!(name, "Goldberg Steam Emulator");
+            assert!(is_legitimate);
+            assert!(indicators.len() >= 2);
+        } else {
+            panic!("Expected EmulatorProfile");
+        }
+    }
+
+    #[test]
+    fn test_detect_emulator_profile_screamapi_and_eos() {
+        let exports = vec![
+            "EOS_Initialize".to_string(),
+            "EOS_Shutdown".to_string(),
+            "EOS_Platform_Create".to_string(),
+            "EOS_Platform_GetEcomInterface".to_string(),
+        ];
+        let mut data = vec![0u8; 1024];
+        data[100..109].copy_from_slice(b"screamapi");
+        data[200..210].copy_from_slice(b"acidicoala");
+
+        let evidence = detect_emulator_profile(&exports, &data);
+        assert!(evidence.is_some());
+        let ev = evidence.unwrap();
+        if let EvidenceKind::EmulatorProfile {
+            name,
+            is_legitimate,
+            indicators,
+        } = ev.kind
+        {
+            assert_eq!(name, "ScreamAPI (Epic DLC Unlocker)");
+            assert!(is_legitimate);
+            assert!(indicators.len() >= 2);
+        } else {
+            panic!("Expected EmulatorProfile for ScreamAPI");
+        }
     }
 }

@@ -87,6 +87,9 @@ pub const SIDELOAD_CANDIDATE_DLLS: &[&str] = &[
     // Steam & Game Media Interceptors
     "steam_api64.dll",
     "steam_api.dll",
+    // Epic Online Services (EOS) Interceptors
+    "eossdk-win64-shipping.dll",
+    "eossdk-win32-shipping.dll",
     "bink2w64.dll",
     "binkw64.dll",
     "binkw32.dll",
@@ -99,7 +102,10 @@ pub fn is_sideload_candidate_path(path: &Path) -> bool {
         None => return false,
     };
 
-    if !SIDELOAD_CANDIDATE_DLLS.iter().any(|&c| c.eq_ignore_ascii_case(&file_name)) {
+    if !SIDELOAD_CANDIDATE_DLLS
+        .iter()
+        .any(|&c| c.eq_ignore_ascii_case(&file_name))
+    {
         return false;
     }
 
@@ -122,16 +128,24 @@ pub fn is_sideload_candidate_path(path: &Path) -> bool {
 pub fn expand_env_vars(s: &str) -> String {
     let mut result = s.to_string();
     if let Ok(windir) = std::env::var("windir") {
-        result = result.replace("%windir%", &windir).replace("%WINDIR%", &windir);
+        result = result
+            .replace("%windir%", &windir)
+            .replace("%WINDIR%", &windir);
     }
     if let Ok(sysroot) = std::env::var("SystemRoot") {
-        result = result.replace("%SystemRoot%", &sysroot).replace("%SYSTEMROOT%", &sysroot);
+        result = result
+            .replace("%SystemRoot%", &sysroot)
+            .replace("%SYSTEMROOT%", &sysroot);
     }
     if let Ok(appdata) = std::env::var("APPDATA") {
-        result = result.replace("%APPDATA%", &appdata).replace("%appdata%", &appdata);
+        result = result
+            .replace("%APPDATA%", &appdata)
+            .replace("%appdata%", &appdata);
     }
     if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-        result = result.replace("%LOCALAPPDATA%", &localappdata).replace("%localappdata%", &localappdata);
+        result = result
+            .replace("%LOCALAPPDATA%", &localappdata)
+            .replace("%localappdata%", &localappdata);
     }
     if let Ok(progfiles) = std::env::var("ProgramFiles") {
         result = result.replace("%ProgramFiles%", &progfiles);
@@ -148,9 +162,9 @@ pub fn extract_file_path_from_cmd(cmd: &str) -> Option<PathBuf> {
         return None;
     }
 
-    if trimmed.starts_with('"') {
-        if let Some(end_idx) = trimmed[1..].find('"') {
-            let path_str = &trimmed[1..=end_idx];
+    if let Some(stripped) = trimmed.strip_prefix('"') {
+        if let Some(end_idx) = stripped.find('"') {
+            let path_str = &stripped[..end_idx];
             let p = PathBuf::from(path_str);
             if p.exists() {
                 return Some(p);
@@ -262,10 +276,12 @@ pub fn parse_lnk_bytes(data: &[u8]) -> Option<LnkInfo> {
 
     // LinkCLSID: {00021401-0000-0000-C000-000000000046}
     let clsid = &data[4..20];
-    if clsid != [
-        0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x46,
-    ] {
+    if clsid
+        != [
+            0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x46,
+        ]
+    {
         return None;
     }
 
@@ -297,7 +313,8 @@ pub fn parse_lnk_bytes(data: &[u8]) -> Option<LnkInfo> {
         if (info_flags & 0x01) != 0 {
             // Local base path offset
             let local_base_path_off =
-                u32::from_le_bytes(data[info_start + 16..info_start + 20].try_into().ok()?) as usize;
+                u32::from_le_bytes(data[info_start + 16..info_start + 20].try_into().ok()?)
+                    as usize;
             let path_start = info_start.saturating_add(local_base_path_off);
             if path_start < data.len() {
                 if let Some(nul_pos) = data[path_start..].iter().position(|&b| b == 0) {
@@ -312,7 +329,8 @@ pub fn parse_lnk_bytes(data: &[u8]) -> Option<LnkInfo> {
 
             if header_size >= 0x24 && info_start + 32 <= data.len() {
                 let uni_off =
-                    u32::from_le_bytes(data[info_start + 28..info_start + 32].try_into().ok()?) as usize;
+                    u32::from_le_bytes(data[info_start + 28..info_start + 32].try_into().ok()?)
+                        as usize;
                 if uni_off > 0 {
                     let uni_start = info_start.saturating_add(uni_off);
                     if uni_start + 2 <= data.len() {
@@ -351,8 +369,10 @@ pub fn parse_lnk_bytes(data: &[u8]) -> Option<LnkInfo> {
             let u16_slice = &data[*off..*off + byte_len];
             *off += byte_len;
             let u16_chars: Vec<u16> = u16_slice
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&c| u16::from_le_bytes(c))
                 .collect();
             Some(String::from_utf16_lossy(&u16_chars))
         } else {
@@ -526,11 +546,14 @@ fn audit_startup_folders(items: &mut Vec<PersistenceItem>) {
     let mut folder_paths = Vec::new();
 
     if let Ok(appdata) = std::env::var("APPDATA") {
-        folder_paths.push(PathBuf::from(appdata).join("Microsoft\\Windows\\Start Menu\\Programs\\Startup"));
+        folder_paths
+            .push(PathBuf::from(appdata).join("Microsoft\\Windows\\Start Menu\\Programs\\Startup"));
     }
 
     if let Ok(progdata) = std::env::var("ProgramData") {
-        folder_paths.push(PathBuf::from(progdata).join("Microsoft\\Windows\\Start Menu\\Programs\\Startup"));
+        folder_paths.push(
+            PathBuf::from(progdata).join("Microsoft\\Windows\\Start Menu\\Programs\\Startup"),
+        );
     }
 
     for folder in folder_paths {
@@ -656,22 +679,39 @@ mod tests {
         let items = audit_directory_for_sideloads(temp_dir.path());
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].entry_name, "version.dll");
-        assert!(matches!(items[0].source, PersistenceSource::DllSideloadTrap { .. }));
+        assert!(matches!(
+            items[0].source,
+            PersistenceSource::DllSideloadTrap { .. }
+        ));
     }
 
     #[test]
     fn test_is_sideload_candidate_path() {
         // App directory proxy DLLs -> true
-        assert!(is_sideload_candidate_path(Path::new("C:\\Games\\Doom\\dxgi.dll")));
-        assert!(is_sideload_candidate_path(Path::new("C:\\Games\\Doom\\version.dll")));
-        assert!(is_sideload_candidate_path(Path::new("C:\\Games\\Doom\\fakenvapi.dll")));
-        assert!(is_sideload_candidate_path(Path::new("C:\\Games\\Doom\\dinput8.dll")));
+        assert!(is_sideload_candidate_path(Path::new(
+            "C:\\Games\\Doom\\dxgi.dll"
+        )));
+        assert!(is_sideload_candidate_path(Path::new(
+            "C:\\Games\\Doom\\version.dll"
+        )));
+        assert!(is_sideload_candidate_path(Path::new(
+            "C:\\Games\\Doom\\fakenvapi.dll"
+        )));
+        assert!(is_sideload_candidate_path(Path::new(
+            "C:\\Games\\Doom\\dinput8.dll"
+        )));
 
         // Legitimate Windows system directory DLLs -> false
-        assert!(!is_sideload_candidate_path(Path::new("C:\\Windows\\System32\\dxgi.dll")));
-        assert!(!is_sideload_candidate_path(Path::new("C:\\Windows\\SysWOW64\\version.dll")));
+        assert!(!is_sideload_candidate_path(Path::new(
+            "C:\\Windows\\System32\\dxgi.dll"
+        )));
+        assert!(!is_sideload_candidate_path(Path::new(
+            "C:\\Windows\\SysWOW64\\version.dll"
+        )));
 
         // Unrelated non-candidate DLLs -> false
-        assert!(!is_sideload_candidate_path(Path::new("C:\\Games\\Doom\\my_custom_mod.dll")));
+        assert!(!is_sideload_candidate_path(Path::new(
+            "C:\\Games\\Doom\\my_custom_mod.dll"
+        )));
     }
 }

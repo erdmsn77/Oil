@@ -3,8 +3,6 @@
 //! GDD §6 & §10 — Generates safe synthetic mock PEs in-memory
 //! to validate all 4 forensic tiers without requiring live malware samples.
 
-
-
 /// Crafts a minimal, valid x64 PE executable byte buffer.
 pub fn create_minimal_pe(section_name: &str, payload: &[u8]) -> Vec<u8> {
     let mut pe = Vec::new();
@@ -75,7 +73,7 @@ pub fn create_minimal_pe(section_name: &str, payload: &[u8]) -> Vec<u8> {
     pe.extend_from_slice(&sec_name); // Name
     pe.extend_from_slice(&0x1000u32.to_le_bytes()); // VirtualSize
     pe.extend_from_slice(&0x1000u32.to_le_bytes()); // VirtualAddress
-    let raw_size = ((payload.len() + 0x1FF) / 0x200 * 0x200).max(0x200) as u32;
+    let raw_size = (payload.len().div_ceil(0x200) * 0x200).max(0x200) as u32;
     pe.extend_from_slice(&raw_size.to_le_bytes()); // SizeOfRawData
     pe.extend_from_slice(&0x200u32.to_le_bytes()); // PointerToRawData
     pe.extend_from_slice(&0u32.to_le_bytes()); // PointerToRelocations

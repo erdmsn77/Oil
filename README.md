@@ -59,6 +59,13 @@ Traditional antivirus engines fail in binary triage: they either blindly flag ev
 * Pinpoints exact byte-level changes between an original and modified binary.
 * Classifies patches into verified categories: `DRM_BYPASS`, `CODE_INJECTION`, `DIGITAL_SIGNATURE`, or `SUSPICIOUS_UNKNOWN`.
 
+#### 4. Gaming Platform Emulator & Trojan Crack Forensics
+* **Steamworks & Epic Online Services (EOS)**: Decodes Valve Steamworks C-API and Epic Online Services (`EOSSDK-Win64-Shipping.dll`) export tables and configuration anchors (`steam_settings`, `EOS_settings`, `ScreamAPI`, `Nemirtingas`, `epic_emu.ini`).
+* **Poisoned Crack Synergy**: Mathematically separates benign offline game emulators (Goldberg, ScreamAPI) from trojanized cracks. If an emulator profile carries stealer IOCs or injection APIs, Oil triggers `+40 Synergy` to instantly escalate to `HIGH RISK` ("Poisoned Gaming Platform Emulator").
+
+#### 5. Native Desktop GUI (`oil-gui`)
+* Powered by `eframe` (pure Rust) with an 8,000-particle synaptic background, frosted acrylic glassmorphism cards, drag-and-drop file inspection, and magnetic threat isolation.
+
 ---
 
 ### Installation & Build
@@ -71,20 +78,26 @@ Download signed releases directly from [GitHub Releases](https://github.com/erdm
 git clone https://github.com/erdmsn77/Oil.git
 cd Oil
 
-# Run workspace tests (77 unit and integration tests)
+# Run workspace tests (102 unit and integration tests)
 cargo test --workspace
 
-# Build optimized release binary
+# Build optimized release binaries
 cargo build --release
+
+# Launch native desktop interface
+cargo run -p oil-gui
 ```
-The compiled binary will be placed at `target/release/oil.exe`.
+The compiled binaries will be placed at `target/release/oil.exe` and `target/release/oil-gui.exe`.
 
 ---
 
 ### Usage
 
 ```bash
-# Scan a single executable or archive
+# Launch the desktop graphical triage interface
+oil-gui.exe
+
+# Scan a single executable or archive via CLI
 oil scan C:\Path\To\Binary.exe
 
 # Scan an entire directory with suite correlation and DLL audit
@@ -135,39 +148,52 @@ Geleneksel antivirüs yazılımları tersine mühendislik ve dosya triajında ç
 * İki binary arasındaki bayt ve assembly farklarını ortaya çıkarır.
 * Yapılan modifikasyonu sınıflandırır: `DRM_BYPASS`, `CODE_INJECTION`, `DIGITAL_SIGNATURE` veya `SUSPICIOUS_UNKNOWN`.
 
+#### 4. Oyun Emülatörleri ve Zehirlenmiş Crack Adli Analizi
+* **Steamworks ve Epic Online Services (EOS)**: Valve Steamworks C-API ve Epic Games (`EOSSDK-Win64-Shipping.dll`) export tablolarını ve yapılandırma dizgilerini (`steam_settings`, `EOS_settings`, `ScreamAPI`, `Nemirtingas`, `epic_emu.ini`) ayrıştırır.
+* **Zehirlenmiş Crack Sinerjisi**: Meşru çevrimdışı DRM emülatörleri (Goldberg, ScreamAPI) ile bu dosyaları maske olarak kullanan truva atlarını birbirinden ayırır. Emülatör profili taşıyan dosyada veri çalıcı veya kod enjeksiyonu tespit edilirse `+40 Synergy` ile doğrudan `HIGH RISK` ("Poisoned Gaming Platform Emulator") kademesine yükseltilir.
+
+#### 5. Yerel Masaüstü Grafik Arayüzü (`oil-gui`)
+* `eframe` (saf Rust) motoru, 8.000 parçacıklı dinamik sinaps ağı, buhulu akrilik cam (frosted glass) kart silindiri, sürükle-bırak desteği ve anında tehdit karantina halkası ile görsel triaj sunar.
+
 ---
 
 ### Kurulum ve Derleme
 
 #### Hazır İmzalı Binary İndirme
-[GitHub Releases](https://github.com/erdmsn77/Oil/releases) sayfasından Sigstore ile dijital olarak imzalanmış `oil.exe` dosyasını doğrudan indirebilirsiniz.
+[GitHub Releases](https://github.com/erdmsn77/Oil/releases) sayfasından Sigstore ile dijital olarak imzalanmış `oil.exe` ve `oil-gui.exe` dosyalarını doğrudan indirebilirsiniz.
 
 #### Kaynak Koddan Derleme
 ```bash
 git clone https://github.com/erdmsn77/Oil.git
 cd Oil
 
-# Tüm test paketlerini çalıştır (77 birim ve entegrasyon testi)
+# Tüm test paketlerini çalıştır (102 birim ve entegrasyon testi)
 cargo test --workspace
 
-# Optimize edilmiş sürümü derle
+# Optimize edilmiş sürümleri derle
 cargo build --release
+
+# Masaüstü grafik arayüzünü başlat
+cargo run -p oil-gui
 ```
-Derlenen binary `target/release/oil.exe` konumunda hazır olacaktır.
+Derlenen binary dosyalar `target/release/oil.exe` ve `target/release/oil-gui.exe` konumunda hazır olacaktır.
 
 ---
 
 ### Kullanım Örnekleri
 
 ```bash
-# Tek bir çalıştırılabilir dosya veya arşivi analiz et
+# Masaüstü grafiksel triaj arayüzünü başlat
+oil-gui.exe
+
+# Tek bir çalıştırılabilir dosya veya arşivi CLI ile analiz et
 oil scan C:\Hedef\Dosya.exe
 
 # Tüm bir yazılım dizinini ilişkilendirilmiş risk matrisiyle tara
 oil scan C:\Hedef\UygulamaKlasoru
 
 # Orijinal dosya ile modifiye edilmiş/yamalanmış dosyayı semantik olarak kıyasla
-oil diff temiz_hedef.exe yamali_hedef.exe
+oil diff orijinal_hedef.exe yamali_hedef.exe
 
 # Uygulama klasörünü DLL hijacking / proxy DLL adayları için denetle
 oil hunt C:\Hedef\UygulamaKlasoru

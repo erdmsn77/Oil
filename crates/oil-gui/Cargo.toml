@@ -1,0 +1,13 @@
+[package]
+name = "oil-gui"
+version.workspace = true
+edition.workspace = true
+description = "Native Windows forensic desktop interface for Oil"
+
+[[bin]]
+name = "oil-gui"
+path = "src/main.rs"
+
+[dependencies]
+oil-core = { path = "../oil-core" }
+eframe = "0.29"

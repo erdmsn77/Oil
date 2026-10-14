@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/oil-core",
     "crates/oil-cli",
+    "crates/oil-gui",
 ]
 
 [workspace.package]

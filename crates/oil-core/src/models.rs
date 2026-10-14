@@ -45,17 +45,36 @@ impl std::fmt::Display for Tier {
 pub enum EvidenceKind {
     // — IOC hits (Stage 2) —
     /// Discord webhook URL reference found in binary.
-    DiscordWebhook { url: String, encoding: StringEncoding },
+    DiscordWebhook {
+        url: String,
+        encoding: StringEncoding,
+    },
     /// Telegram bot token reference found.
-    TelegramToken { token: String, encoding: StringEncoding },
+    TelegramToken {
+        token: String,
+        encoding: StringEncoding,
+    },
     /// Cryptocurrency wallet address pattern.
-    CryptoWallet { address: String, coin: String, encoding: StringEncoding },
+    CryptoWallet {
+        address: String,
+        coin: String,
+        encoding: StringEncoding,
+    },
     /// Browser credential database path reference.
-    CredentialPath { path: String, encoding: StringEncoding },
+    CredentialPath {
+        path: String,
+        encoding: StringEncoding,
+    },
     /// Encoded PowerShell command reference.
-    PowerShellCommand { fragment: String, encoding: StringEncoding },
+    PowerShellCommand {
+        fragment: String,
+        encoding: StringEncoding,
+    },
     /// YARA rule match.
-    YaraMatch { rule_name: String, namespace: String },
+    YaraMatch {
+        rule_name: String,
+        namespace: String,
+    },
 
     // — PE structural anomalies (Stage 1) —
     /// Section with Shannon entropy above threshold.
@@ -71,11 +90,24 @@ pub enum EvidenceKind {
     /// Sensitive cryptographic or DPAPI API imports (e.g. CryptUnprotectData).
     SensitiveApiImport { dll: String, functions: Vec<String> },
     /// Digital signature status.
-    SignatureStatus { valid: bool, signer: Option<String>, detail: String },
+    SignatureStatus {
+        valid: bool,
+        signer: Option<String>,
+        detail: String,
+    },
     /// Crypter structural profile match (tiny stub + large encrypted resource).
     CrypterProfile { indicators: Vec<String> },
     /// DLL Sideloading / Proxy Hook indicator (shadows a system or platform library).
-    DllProxyHook { dll_name: String, shadows_system: bool },
+    DllProxyHook {
+        dll_name: String,
+        shadows_system: bool,
+    },
+    /// Gaming Platform / Steam Emulator profile (e.g. Goldberg, ColdAPI, SmartSteamEmu).
+    EmulatorProfile {
+        name: String,
+        is_legitimate: bool,
+        indicators: Vec<String>,
+    },
 
     // — Informational (not threat signals) —
     /// Purely informational note for user education.
