@@ -596,27 +596,35 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
         })
         .unwrap_or((0, 0));
 
-    let cert_table_end =
-        if cert_table_offset > 0 && cert_table_size > 0 && cert_table_offset < data.len() as u64 {
-            cert_table_offset
-                .saturating_add(cert_table_size)
-                .min(data.len() as u64)
-        } else {
-            0
-        };
+    let data_len = data.len() as u64;
+    let has_security_dir_entry = cert_table_offset > 0 || cert_table_size > 0;
+    let cert_table_in_bounds = cert_table_offset > 0
+        && cert_table_size >= 8
+        && cert_table_offset
+            .checked_add(cert_table_size)
+            .map(|end| end <= data_len)
+            .unwrap_or(false);
+
+    let cert_table_end = if cert_table_in_bounds {
+        cert_table_offset.saturating_add(cert_table_size)
+    } else {
+        0
+    };
 
     let image_end = last_section_end.max(cert_table_end);
 
-    let overlay_size = if (data.len() as u64) > image_end && image_end > 0 {
-        (data.len() as u64).saturating_sub(image_end)
+    let overlay_size = if data_len > image_end && image_end > 0 {
+        data_len.saturating_sub(image_end)
     } else {
         0
     };
 
     if overlay_size > 1024 {
         // Only flag meaningful non-certificate overlays (> 1 KB)
-        let overlay_offset = image_end.min(data.len() as u64) as usize;
-        let overlay_data = &data[overlay_offset..];
+        let overlay_data = usize::try_from(image_end)
+            .ok()
+            .and_then(|offset| data.get(offset..))
+            .unwrap_or(&[]);
         let overlay_entropy = shannon_entropy(overlay_data);
 
         let mut explanation = format!(
@@ -639,29 +647,49 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
         });
     }
 
-    let has_authenticode = cert_table_offset > 0 && cert_table_size > 0;
-    if has_authenticode {
+    // Static PE parsing can only observe the presence of an embedded certificate table;
+    // cryptographic validity must be established by WinVerifyTrust in scan_path.
+    if cert_table_in_bounds {
         evidence.push(Evidence {
             kind: EvidenceKind::SignatureStatus {
-                valid: true,
+                valid: false,
                 signer: None,
                 detail: format!(
-                    "Authenticode security directory present ({} bytes at offset 0x{:X})",
+                    "Unverified Authenticode security directory ({} bytes at offset 0x{:X})",
                     cert_table_size, cert_table_offset
                 ),
             },
             is_threat_signal: false,
             explanation: format!(
-                "Binary contains embedded Authenticode certificate structure ({} bytes; unverified certificate table).",
+                "Binary contains embedded Authenticode certificate structure ({} bytes; not cryptographically verified in static/in-memory analysis).",
                 cert_table_size
             ),
         });
+    } else if has_security_dir_entry {
+        evidence.push(Evidence {
+            kind: EvidenceKind::SignatureStatus {
+                valid: false,
+                signer: None,
+                detail: format!(
+                    "Malformed or out-of-bounds Authenticode security directory ({} bytes at offset 0x{:X})",
+                    cert_table_size, cert_table_offset
+                ),
+            },
+            is_threat_signal: false,
+            explanation: "PE security directory entry is malformed, truncated, or points outside file bounds.".to_string(),
+        });
     }
 
-    let security_directory = if cert_table_offset > 0 && cert_table_size > 0 {
+    let security_directory = if cert_table_in_bounds {
         Some((cert_table_offset, cert_table_size))
     } else {
         None
+    };
+
+    let signature_valid = if cert_table_in_bounds {
+        None
+    } else {
+        Some(false)
     };
 
     let autopsy = PeAutopsy {
@@ -672,7 +700,7 @@ pub fn analyze_pe(data: &[u8]) -> Option<(PeAutopsy, Vec<Evidence>)> {
         imports,
         exports,
         overlay_size,
-        signature_valid: Some(has_authenticode),
+        signature_valid,
         signature_signer: None,
         security_directory,
     };
@@ -833,6 +861,211 @@ mod tests {
             assert!(indicators.len() >= 2);
         } else {
             panic!("Expected EmulatorProfile for ScreamAPI");
+        }
+    }
+
+    #[test]
+    fn unverified_security_directory_does_not_claim_valid_signature() {
+        use crate::lab::create_minimal_pe;
+        use crate::models::Tier;
+
+        // High-entropy executable payload (+20 Suspicious) with an unverified certificate table.
+        let mut payload = Vec::with_capacity(2048);
+        for i in 0..2048 {
+            payload.push(((i * 73 + 19) % 256) as u8);
+        }
+        let mut pe_data = create_minimal_pe(".text", &payload);
+
+        let cert_offset = pe_data.len() as u32;
+        let cert_size = 64u32;
+        pe_data[0x128..0x12C].copy_from_slice(&cert_offset.to_le_bytes());
+        pe_data[0x12C..0x130].copy_from_slice(&cert_size.to_le_bytes());
+
+        let mut mock_cert = vec![0x30u8; cert_size as usize];
+        mock_cert[0..4].copy_from_slice(&cert_size.to_le_bytes());
+        mock_cert[4..6].copy_from_slice(&0x0200u16.to_le_bytes());
+        mock_cert[6..8].copy_from_slice(&0x0002u16.to_le_bytes());
+        pe_data.extend_from_slice(&mock_cert);
+
+        let (autopsy, evidence) = analyze_pe(&pe_data).expect("valid synthetic PE");
+        assert_eq!(
+            autopsy.security_directory,
+            Some((cert_offset as u64, cert_size as u64))
+        );
+        assert_ne!(
+            autopsy.signature_valid,
+            Some(true),
+            "Static PE parsing must not mark an unverified certificate table as valid"
+        );
+        assert!(evidence
+            .iter()
+            .any(|e| matches!(&e.kind, EvidenceKind::SignatureStatus { valid: false, .. })));
+
+        // End-to-end in-memory scan must not apply -15 signature mitigation without WinVerifyTrust.
+        let report = crate::scan_bytes(&pe_data, "packed_unverified.exe");
+        assert_eq!(
+            report.verdict,
+            Tier::Suspicious,
+            "Unverified security directory must not downgrade packed binary below SUSPICIOUS"
+        );
+    }
+
+    #[test]
+    fn oversized_security_directory_fails_closed() {
+        use crate::lab::create_minimal_pe;
+        use crate::models::Tier;
+
+        let mut pe_data = create_minimal_pe(".text", b"\x90\x90\x90\xC3sample_code");
+        let overlay_start = pe_data.len() as u32;
+
+        // Append a 2048-byte high-entropy overlay past the last section.
+        let mut overlay = Vec::with_capacity(2048);
+        for i in 0..2048 {
+            overlay.push(((i * 131 + 7) % 256) as u8);
+        }
+        pe_data.extend_from_slice(&overlay);
+
+        // Forge Security Directory with overflowing size (u32::MAX).
+        pe_data[0x128..0x12C].copy_from_slice(&overlay_start.to_le_bytes());
+        pe_data[0x12C..0x130].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        // Either rejected as malformed PE (INCONCLUSIVE) or exposes the full overlay without valid signature.
+        match analyze_pe(&pe_data) {
+            None => {
+                let report = crate::scan_bytes(&pe_data, "oversized_cert.exe");
+                assert_eq!(
+                    report.verdict,
+                    Tier::Inconclusive,
+                    "Rejected PE with overflowing security directory must fail closed as INCONCLUSIVE"
+                );
+            }
+            Some((autopsy, evidence)) => {
+                assert_eq!(autopsy.security_directory, None);
+                assert_eq!(autopsy.signature_valid, Some(false));
+                assert_eq!(autopsy.overlay_size, 2048);
+                assert!(evidence.iter().any(|e| matches!(
+                    &e.kind,
+                    EvidenceKind::Overlay { size_bytes: 2048 }
+                ) && e.is_threat_signal));
+            }
+        }
+    }
+
+    #[test]
+    fn security_directory_past_eof_fails_closed() {
+        use crate::lab::create_minimal_pe;
+        use crate::models::Tier;
+
+        let mut pe_data = create_minimal_pe(".text", b"\x90\x90\xC3sample_code");
+        let past_eof = (pe_data.len() as u32).saturating_add(0x1000);
+        pe_data[0x128..0x12C].copy_from_slice(&past_eof.to_le_bytes());
+        pe_data[0x12C..0x130].copy_from_slice(&64u32.to_le_bytes());
+
+        match analyze_pe(&pe_data) {
+            None => {
+                let report = crate::scan_bytes(&pe_data, "past_eof_cert.exe");
+                assert_eq!(report.verdict, Tier::Inconclusive);
+            }
+            Some((autopsy, evidence)) => {
+                assert_eq!(autopsy.security_directory, None);
+                assert_eq!(autopsy.signature_valid, Some(false));
+                assert!(evidence.iter().any(|e| matches!(
+                    &e.kind,
+                    EvidenceKind::SignatureStatus { valid: false, .. }
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn truncated_security_directory_does_not_hide_overlay() {
+        use crate::lab::create_minimal_pe;
+
+        let mut pe_data = create_minimal_pe(".text", b"\x90\x90\x90\xC3sample_code");
+        let overlay_start = pe_data.len() as u32;
+
+        // Append a 2048-byte high-entropy overlay past the last section.
+        let mut overlay = Vec::with_capacity(2048);
+        for i in 0..2048 {
+            overlay.push(((i * 131 + 7) % 256) as u8);
+        }
+        pe_data.extend_from_slice(&overlay);
+
+        // Truncated security directory (< 8-byte WIN_CERTIFICATE header) inside file bounds.
+        pe_data[0x128..0x12C].copy_from_slice(&overlay_start.to_le_bytes());
+        pe_data[0x12C..0x130].copy_from_slice(&4u32.to_le_bytes());
+
+        match analyze_pe(&pe_data) {
+            None => {
+                let report = crate::scan_bytes(&pe_data, "truncated_cert.exe");
+                assert_eq!(report.verdict, crate::models::Tier::Inconclusive);
+            }
+            Some((autopsy, evidence)) => {
+                assert_eq!(autopsy.security_directory, None);
+                assert_eq!(autopsy.signature_valid, Some(false));
+                assert_eq!(autopsy.overlay_size, 2048);
+                assert!(evidence.iter().any(|e| matches!(
+                    &e.kind,
+                    EvidenceKind::Overlay { size_bytes: 2048 }
+                ) && e.is_threat_signal));
+                assert!(evidence.iter().any(|e| matches!(
+                    &e.kind,
+                    EvidenceKind::SignatureStatus { valid: false, .. }
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn pe_boundary_edge_cases_never_panic_and_fail_closed() {
+        use crate::models::Tier;
+
+        let mut mz_lfanew_zero = vec![0u8; 64];
+        mz_lfanew_zero[0..2].copy_from_slice(b"MZ");
+
+        let mut mz_lfanew_max = vec![0u8; 64];
+        mz_lfanew_max[0..2].copy_from_slice(b"MZ");
+        mz_lfanew_max[0x3C..0x40].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        let mut mz_lfanew_past_eof = vec![0u8; 64];
+        mz_lfanew_past_eof[0..2].copy_from_slice(b"MZ");
+        mz_lfanew_past_eof[0x3C..0x40].copy_from_slice(&0x2000u32.to_le_bytes());
+
+        let mut truncated_pe = vec![0u8; 0x90];
+        truncated_pe[0..2].copy_from_slice(b"MZ");
+        truncated_pe[0x3C..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        truncated_pe[0x80..0x84].copy_from_slice(b"PE\0\0");
+
+        for malformed in [
+            &[][..],
+            &[0x4D][..],
+            b"MZ".as_slice(),
+            mz_lfanew_zero.as_slice(),
+            mz_lfanew_max.as_slice(),
+            mz_lfanew_past_eof.as_slice(),
+            truncated_pe.as_slice(),
+        ] {
+            assert!(
+                analyze_pe(malformed).is_none(),
+                "Malformed PE input of len {} must return None",
+                malformed.len()
+            );
+        }
+
+        for mz_corrupt in [
+            b"MZ".as_slice(),
+            mz_lfanew_zero.as_slice(),
+            mz_lfanew_max.as_slice(),
+            mz_lfanew_past_eof.as_slice(),
+            truncated_pe.as_slice(),
+        ] {
+            let report = crate::scan_bytes(mz_corrupt, "truncated.exe");
+            assert_eq!(
+                report.verdict,
+                Tier::Inconclusive,
+                "Malformed MZ input of len {} must yield INCONCLUSIVE",
+                mz_corrupt.len()
+            );
         }
     }
 }
